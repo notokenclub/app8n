@@ -317,6 +317,4 @@ That's what this project is about.
 
 </div>
 
-This gives **App8n its own identity** instead of saying “we’re cloning n8n.” I’d also recommend a separate `CONTRIBUTING.md`, `ARCHITECTURE.md`, and `ROADMAP.md` once the repo is set up.
 
-If you want, I can also make this **more GitHub aesthetic** with badges, ASCII layout, contribution graphs, and a much more **premium open-source startup feel**.
