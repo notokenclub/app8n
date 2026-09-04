@@ -4,8 +4,10 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 
+// turbopackIgnore keeps the bundler from tracing the entire project into the
+// server output just because this path is computed at runtime.
 export const DATABASE_PATH = resolve(
-  process.cwd(),
+  /* turbopackIgnore: true */ process.cwd(),
   process.env.DATABASE_URL?.replace(/^file:/, "") ?? "./data/app8n.db",
 );
 
