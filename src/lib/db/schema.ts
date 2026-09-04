@@ -156,6 +156,31 @@ export const workflows = sqliteTable(
   ],
 );
 
+export type ExecutionStep =
+  | { kind: "text"; text: string; at: number }
+  | {
+      kind: "tool_call";
+      toolName: string;
+      toolCallId: string;
+      input: unknown;
+      at: number;
+    }
+  | {
+      kind: "tool_result";
+      toolName: string;
+      toolCallId: string;
+      output: unknown;
+      at: number;
+    }
+  | {
+      kind: "approval_required";
+      toolName: string;
+      toolCallId: string;
+      approvalId: string;
+      at: number;
+    }
+  | { kind: "error"; message: string; at: number };
+
 export const EXECUTION_STATUSES = [
   "running",
   "awaiting_approval",
@@ -180,6 +205,14 @@ export const executionLogs = sqliteTable(
     trigger: text("trigger", { enum: TRIGGER_TYPES }).notNull(),
     inputPayload: text("input_payload", { mode: "json" }),
     outputPayload: text("output_payload", { mode: "json" }),
+    /** Ordered trace of what the agent did: text, tool calls, tool results. */
+    stepsJson: text("steps_json", { mode: "json" })
+      .$type<ExecutionStep[]>()
+      .notNull()
+      .default([]),
+    /** Model messages as of the last step. A run halted on an approval gate is
+     * resumed from here, so a background job can pause overnight and continue. */
+    messagesJson: text("messages_json", { mode: "json" }).$type<unknown[]>(),
     errorTrace: text("error_trace"),
     durationMs: integer("duration_ms"),
     startedAt: integer("started_at", { mode: "timestamp" }),
@@ -212,6 +245,9 @@ export const approvalRequests = sqliteTable(
     executionId: text("execution_id")
       .notNull()
       .references(() => executionLogs.id, { onDelete: "cascade" }),
+    /** Correlates the gate with the model's tool call so a resumed run can
+     * replay the decision against the exact call that triggered it. */
+    toolCallId: text("tool_call_id"),
     actionName: text("action_name").notNull(),
     summary: text("summary"),
     parametersJson: text("parameters_json", { mode: "json" })
@@ -230,6 +266,7 @@ export const approvalRequests = sqliteTable(
   (t) => [
     index("approval_requests_execution_idx").on(t.executionId),
     index("approval_requests_status_idx").on(t.status),
+    index("approval_requests_tool_call_idx").on(t.toolCallId),
   ],
 );
 
@@ -301,3 +338,8 @@ export type ExecutionLog = typeof executionLogs.$inferSelect;
 export type NewExecutionLog = typeof executionLogs.$inferInsert;
 export type ApprovalRequest = typeof approvalRequests.$inferSelect;
 export type NewApprovalRequest = typeof approvalRequests.$inferInsert;
+
+export type TriggerType = (typeof TRIGGER_TYPES)[number];
+export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
+export type ExecutionStatus = (typeof EXECUTION_STATUSES)[number];
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];

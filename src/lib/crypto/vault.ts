@@ -1,6 +1,7 @@
 import {
   createCipheriv,
   createDecipheriv,
+  hkdfSync,
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
@@ -60,6 +61,17 @@ function loadKey(): Buffer {
 /** Test-only: drops the memoized key so a new env value takes effect. */
 export function resetKeyCache(): void {
   cachedKey = null;
+}
+
+/**
+ * Derives a purpose-bound key from the master key. Signing and encryption use
+ * separate subkeys so that compromising one use does not weaken the other, and
+ * so a signature can never be mistaken for ciphertext.
+ */
+export function deriveSubkey(purpose: string): Buffer {
+  return Buffer.from(
+    hkdfSync("sha256", loadKey(), Buffer.alloc(0), `app8n:${purpose}`, KEY_BYTES),
+  );
 }
 
 /**
