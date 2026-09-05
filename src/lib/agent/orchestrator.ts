@@ -21,7 +21,7 @@ import {
   recordSteps,
   startExecution,
 } from "./execution";
-import { agentModel } from "./model";
+import { agentModelFor } from "./model";
 import { buildSystemPrompt } from "./prompt";
 import { buildToolSet } from "./toolset";
 
@@ -142,7 +142,7 @@ async function buildAgentConfig(options: AgentRunOptions): Promise<AgentConfig> 
 
   return {
     executionId,
-    model: options.model ?? agentModel(),
+    model: options.model ?? (await agentModelFor(options.userId)),
     system: buildSystemPrompt({
       services: options.services ?? [],
       email: options.email,

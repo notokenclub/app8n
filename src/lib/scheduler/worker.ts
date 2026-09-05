@@ -88,8 +88,11 @@ export interface WorkerHandle {
  */
 export function startWorker(hooks: WorkerHooks = {}): WorkerHandle {
   if (!isAgentConfigured()) {
+    // Advisory only. Each run resolves its own user's vault key, which may
+    // exist even with nothing in the environment, so this cannot be a refusal
+    // to start — the worker has no user to check at boot time.
     hooks.log?.(
-      "ANTHROPIC_API_KEY is not set — scheduler is idle until it is configured.",
+      "ANTHROPIC_API_KEY is not set — runs will rely on a key saved in the vault.",
     );
   }
 

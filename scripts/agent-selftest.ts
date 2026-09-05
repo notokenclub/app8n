@@ -115,6 +115,26 @@ check("action summaries name the concrete action", () => {
   assert.match(summary, /Attendance appeal/);
 });
 
+check("every registered tool has a display label for the UI", async () => {
+  // `tool-display.ts` deliberately does not import the tool registry — that
+  // module pulls in googleapis, which must never reach the client bundle. This
+  // check is what stops the two lists drifting: a tool added without a label
+  // would otherwise ship as a generic "Working…" pill that tells the user
+  // nothing about what the agent is doing on their behalf.
+  const { AGENT_TOOLS } = await import("../src/lib/agent/tools");
+  const { TOOL_DISPLAY } = await import("../src/lib/tool-display");
+
+  const missing = AGENT_TOOLS.map((tool) => tool.name).filter(
+    (name) => !(name in TOOL_DISPLAY),
+  );
+  assert.deepEqual(missing, [], `tools missing a display entry: ${missing}`);
+
+  const orphaned = Object.keys(TOOL_DISPLAY).filter(
+    (name) => !AGENT_TOOLS.some((tool) => tool.name === name),
+  );
+  assert.deepEqual(orphaned, [], `display entries for unknown tools: ${orphaned}`);
+});
+
 // --- Agent loop ------------------------------------------------------------
 
 check("agent chains read tools and logs every step", async () => {

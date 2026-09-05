@@ -7,7 +7,7 @@ import {
 } from "ai";
 import { getCurrentUserId } from "@/lib/auth/session";
 import { resolveAgentContext } from "@/lib/agent/context";
-import { isAgentConfigured } from "@/lib/agent/model";
+import { isAgentConfiguredFor } from "@/lib/agent/model";
 import { streamAgent } from "@/lib/agent/orchestrator";
 
 export const dynamic = "force-dynamic";
@@ -21,17 +21,6 @@ interface ChatBody {
 }
 
 export async function POST(request: Request) {
-  if (!isAgentConfigured()) {
-    return Response.json(
-      {
-        error: "agent_not_configured",
-        message:
-          "ANTHROPIC_API_KEY is not set. Add it to .env.local to enable the agent.",
-      },
-      { status: 503 },
-    );
-  }
-
   const body = (await request.json()) as ChatBody;
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
     return Response.json(
@@ -41,6 +30,20 @@ export async function POST(request: Request) {
   }
 
   const userId = await getCurrentUserId();
+
+  // Checked per user rather than from the environment: the key may live in
+  // this user's vault, entered from the phone, with nothing in .env.local.
+  if (!(await isAgentConfiguredFor(userId))) {
+    return Response.json(
+      {
+        error: "agent_not_configured",
+        message:
+          "No Anthropic API key. Add one in Settings, or set ANTHROPIC_API_KEY in .env.local.",
+      },
+      { status: 503 },
+    );
+  }
+
   const ctx = await resolveAgentContext(userId, body.accountId);
 
   const stream = createUIMessageStream({

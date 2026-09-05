@@ -117,14 +117,46 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@theme inline {
+  /* Safe-area insets exposed as theme spacing so they compose with ordinary
+     Tailwind utilities (`pb-safe-b`, `h-tabbar`). On a desktop browser every
+     inset resolves to 0px, so the same markup works on web and in a webview. */
+  --spacing-safe-t: env(safe-area-inset-top, 0px);
+  --spacing-safe-b: env(safe-area-inset-bottom, 0px);
+  --spacing-safe-l: env(safe-area-inset-left, 0px);
+  --spacing-safe-r: env(safe-area-inset-right, 0px);
+  /* Height of the mobile tab bar, excluding the home-indicator inset. */
+  --spacing-tabbar: 3.5rem;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+    /* Stop the page itself rubber-banding in a Capacitor webview; individual
+       scroll regions opt back in. Without this the shell drags away from the
+       status bar on overscroll and the app stops feeling native. */
+    overscroll-behavior-y: none;
   }
   html {
     @apply font-sans;
+    /* iOS zooms the viewport when a sub-16px input is focused and does not
+       always zoom back out; this prevents the adjustment entirely. */
+    -webkit-text-size-adjust: 100%;
+  }
+  button,
+  a,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer utilities {
+  /* A scroll container whose overscroll does not chain to the page. */
+  .scroll-region {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 }

@@ -16,6 +16,7 @@
     "vault:selftest": "tsx scripts/vault-selftest.ts",
     "google:selftest": "tsx scripts/google-selftest.ts",
     "agent:selftest": "tsx scripts/agent-selftest.ts",
+    "seed:demo": "tsx scripts/seed-demo.ts",
     "worker": "tsx scripts/worker.ts",
     "cap:sync": "cap sync",
     "cap:add:ios": "cap add ios",
