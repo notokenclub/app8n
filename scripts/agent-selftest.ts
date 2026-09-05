@@ -135,6 +135,50 @@ check("every registered tool has a display label for the UI", async () => {
   assert.deepEqual(orphaned, [], `display entries for unknown tools: ${orphaned}`);
 });
 
+check("every starter blueprint step names a real tool", async () => {
+  // A typo here is close to invisible: the canvas falls back to a generic
+  // wrench icon and the run simply never places the call, so the blueprint
+  // looks fine on screen while quietly doing less than it claims.
+  const { AGENT_TOOLS } = await import("../src/lib/agent/tools");
+  const { STARTER_BLUEPRINTS } = await import("../src/lib/blueprints");
+  const known = new Set(AGENT_TOOLS.map((tool) => tool.name));
+
+  const unknown = STARTER_BLUEPRINTS.flatMap((blueprint) =>
+    blueprint.nodes
+      .filter((node) => node.tool && !known.has(node.tool))
+      .map((node) => `${blueprint.key}:${node.tool}`),
+  );
+  assert.deepEqual(unknown, [], `blueprint steps naming unknown tools: ${unknown}`);
+
+  const keys = STARTER_BLUEPRINTS.map((blueprint) => blueprint.key);
+  assert.equal(new Set(keys).size, keys.length, "blueprint keys must be unique");
+
+  for (const blueprint of STARTER_BLUEPRINTS) {
+    // The seeder relies on the key to decide insert-vs-update, and the
+    // scheduler needs a cron string it can actually parse.
+    assert.ok(blueprint.key, `${blueprint.title} has no blueprint key`);
+    assert.ok(
+      blueprint.description.length > 40,
+      `${blueprint.title} needs a description — the scheduler runs it as the instruction`,
+    );
+    if (blueprint.triggerType === "cron") {
+      assert.ok(
+        blueprint.cronExpression,
+        `${blueprint.title} is cron-triggered but has no expression`,
+      );
+      assert.ok(
+        isValidCron(blueprint.cronExpression!),
+        `${blueprint.title} has an unparseable cron expression`,
+      );
+    }
+    const ids = new Set(blueprint.nodes.map((node) => node.id));
+    for (const edge of blueprint.edges) {
+      assert.ok(ids.has(edge.source), `${blueprint.key}: dangling edge source ${edge.source}`);
+      assert.ok(ids.has(edge.target), `${blueprint.key}: dangling edge target ${edge.target}`);
+    }
+  }
+});
+
 // --- Agent loop ------------------------------------------------------------
 
 check("agent chains read tools and logs every step", async () => {

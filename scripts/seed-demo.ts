@@ -1,14 +1,13 @@
 /**
- * Puts a pending approval and a couple of blueprints into the local database
- * so the UI can be exercised without a live Anthropic key or a connected
- * Google account. Safe to re-run; not part of the app's runtime.
+ * Puts a pending approval into the local database so the HITL surface can be
+ * exercised without a live Anthropic key or a connected Google account.
+ *
+ * Blueprints are *not* seeded here — `npm run seed:blueprints` owns those, and
+ * duplicating them would leave two sets of near-identical workflows on
+ * `/workflows`. Safe to re-run; not part of the app's runtime.
  */
 import { db } from "../src/lib/db";
-import {
-  approvalRequests,
-  executionLogs,
-  workflows,
-} from "../src/lib/db/schema";
+import { approvalRequests, executionLogs } from "../src/lib/db/schema";
 import { getCurrentUserId } from "../src/lib/auth/session";
 
 async function main() {
@@ -25,8 +24,8 @@ async function main() {
     .returning({ id: executionLogs.id });
 
   await db.insert(approvalRequests).values({
-    executionId: execution.id,
-    toolCallId: "demo-call-1",
+    executionId: execution!.id,
+    toolCallId: `demo-${Date.now()}`,
     actionName: "gmail_send_email",
     summary: "Send an attendance appeal to dean@university.edu",
     parametersJson: {
@@ -38,40 +37,7 @@ async function main() {
     expiresAt: new Date(Date.now() + 25 * 60_000),
   });
 
-  await db.insert(workflows).values([
-    {
-      userId,
-      title: "Morning briefing",
-      description:
-        "Every weekday at 7am, summarise unread mail and read out today's calendar.",
-      triggerType: "cron",
-      cronExpression: "0 7 * * 1-5",
-      status: "active",
-      nodesJson: [
-        { id: "n1", label: "Check calendar", tool: "calendar_list_events" },
-        { id: "n2", label: "Scan unread mail", tool: "gmail_search_messages" },
-        { id: "n3", label: "Write the brief", tool: "docs_create" },
-      ],
-      edgesJson: [],
-    },
-    {
-      userId,
-      title: "Lead capture",
-      description:
-        "When a new enquiry lands in Gmail, extract the contact details into the leads sheet.",
-      triggerType: "gmail_poll",
-      status: "paused",
-      nodesJson: [
-        { id: "n1", label: "Find new enquiries", tool: "gmail_search_messages" },
-        { id: "n2", label: "Read the message", tool: "gmail_get_message" },
-        { id: "n3", label: "Append to sheet", tool: "sheets_append_row" },
-        { id: "n4", label: "Mark as read", tool: "gmail_mark_read" },
-      ],
-      edgesJson: [],
-    },
-  ]);
-
-  console.log("Seeded 1 pending approval and 2 blueprints.");
+  console.log("Seeded 1 pending approval. Open /approvals to resolve it.");
 }
 
 void main();

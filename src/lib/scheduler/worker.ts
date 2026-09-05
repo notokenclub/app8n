@@ -20,12 +20,49 @@ export interface WorkerHooks {
   log?: (message: string) => void;
 }
 
+/**
+ * Renders `nodes_json` as a numbered list the model can read.
+ *
+ * Tolerant of anything in the column: the steps are advisory context, so a
+ * malformed node should cost us that one line, not the whole run.
+ */
+function planOf(workflow: Workflow): string[] {
+  return workflow.nodesJson.flatMap((node) => {
+    if (typeof node !== "object" || node === null) return [];
+    const { label, tool, description } = node as Record<string, unknown>;
+    const name = typeof label === "string" ? label : undefined;
+    const toolName = typeof tool === "string" ? tool : undefined;
+    const head = name ?? toolName;
+    if (!head) return [];
+    const suffix = toolName && name ? ` (${toolName})` : "";
+    const detail =
+      typeof description === "string" && description ? ` — ${description}` : "";
+    return [`${head}${suffix}${detail}`];
+  });
+}
+
 function instructionFor(workflow: Workflow): string {
-  const base = workflow.description?.trim() || workflow.title;
-  if (workflow.triggerType === "gmail_poll") {
-    return `${base}\n\nCheck for relevant new Gmail messages since the last run and act on them. If there is nothing new, say so and stop.`;
+  const parts = [workflow.description?.trim() || workflow.title];
+
+  // Without this the canvas would be a lie: `/workflows` draws the steps as
+  // what the automation does, while the run only ever saw the description.
+  const plan = planOf(workflow);
+  if (plan.length > 0) {
+    parts.push(
+      workflow.isAgentic
+        ? "This is the plan it usually takes. Follow it where it fits and deviate where the situation calls for it:"
+        : "Carry out these steps in order. Do not add steps or skip one unless it genuinely cannot be completed:",
+      plan.map((step, index) => `${index + 1}. ${step}`).join("\n"),
+    );
   }
-  return base;
+
+  if (workflow.triggerType === "gmail_poll") {
+    parts.push(
+      "Only consider Gmail messages that arrived since the last run. If there is nothing new, say so and stop.",
+    );
+  }
+
+  return parts.join("\n\n");
 }
 
 export async function runWorkflow(

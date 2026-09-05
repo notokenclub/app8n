@@ -5,10 +5,12 @@ import {
   CalendarClock,
   CircleDot,
   Hand,
+  ListOrdered,
   Loader2,
   Mail,
   Pause,
   Play,
+  Sparkles,
   Webhook,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -90,8 +92,27 @@ export function WorkflowList({
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{workflow.title}</p>
-                <p className="truncate text-xs text-muted-foreground">
+                <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                   {triggerLabel(workflow)}
+                  <span aria-hidden>·</span>
+                  {/* Whether the steps below are a suggestion or a script is
+                      the difference between an automation that adapts and one
+                      that repeats, and it is not guessable from the list. */}
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title={
+                      workflow.isAgentic
+                        ? "The agent follows these steps as a plan and adapts them to what it finds."
+                        : "The agent runs these steps in order, without improvising."
+                    }
+                  >
+                    {workflow.isAgentic ? (
+                      <Sparkles className="size-3" />
+                    ) : (
+                      <ListOrdered className="size-3" />
+                    )}
+                    {workflow.isAgentic ? "Agentic" : "Fixed steps"}
+                  </span>
                 </p>
               </div>
               <Badge
