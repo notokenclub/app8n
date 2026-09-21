@@ -2,32 +2,44 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { CheckCircle2, KeyRound, Loader2, Lock, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  KeyRound,
+  Loader2,
+  Lock,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useAnthropicKey,
-  useClearAnthropicKey,
-  useSaveAnthropicKey,
+  useClearModelKey,
+  useModelKey,
+  useSaveModelKey,
 } from "@/hooks/use-settings";
 
 /**
- * Entry point for the user's own Anthropic key.
+ * Entry point for the user's own model API key.
  *
  * The field is write-only by design: the server returns a masked hint and
  * never the key itself, so nothing here can be read back out of the vault
  * through the UI. Saving verifies the key with a one-token call before it is
  * written, so a mistyped key fails on this screen instead of silently
  * breaking a scheduled workflow at 6am.
+ *
+ * Everything vendor-specific — the label, the placeholder, where to get a key —
+ * comes from the server's view of the active provider, so this component does
+ * not need to know which providers exist.
  */
-export function AnthropicKeyField() {
-  const { data, isLoading } = useAnthropicKey();
-  const save = useSaveAnthropicKey();
-  const clear = useClearAnthropicKey();
+export function ModelKeyField() {
+  const { data, isLoading } = useModelKey();
+  const save = useSaveModelKey();
+  const clear = useClearModelKey();
   const [value, setValue] = React.useState("");
 
-  if (isLoading) return <Skeleton className="h-28 rounded-2xl" />;
+  if (isLoading || !data) return <Skeleton className="h-28 rounded-2xl" />;
 
   const submit = () => {
     const key = value.trim();
@@ -46,7 +58,17 @@ export function AnthropicKeyField() {
 
   return (
     <div className="space-y-3 rounded-2xl border border-border bg-card p-3.5">
-      {data?.source === "vault" && (
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">{data.providerLabel}</span>
+        {data.freeTier && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[0.625rem] font-medium text-emerald-300">
+            <Sparkles className="size-2.5" />
+            free tier
+          </span>
+        )}
+      </div>
+
+      {data.source === "vault" && (
         <div className="flex items-center gap-2 text-sm">
           <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
           <span className="min-w-0 flex-1">
@@ -75,20 +97,20 @@ export function AnthropicKeyField() {
         </div>
       )}
 
-      {data?.source === "env" && (
+      {data.source === "env" && (
         <p className="text-sm text-muted-foreground">
-          Using{" "}
-          <code className="font-mono text-xs">ANTHROPIC_API_KEY</code> from the
-          environment{" "}
+          Using <code className="font-mono text-xs">{data.envVar}</code> from
+          the environment{" "}
           <span className="font-mono text-xs">{data.hint}</span>. A key saved
           here takes precedence.
         </p>
       )}
 
-      {data?.source === "none" && (
+      {data.source === "none" && (
         <p className="text-sm text-muted-foreground">
-          The agent needs an Anthropic key before it can do anything. Nothing
-          leaves this machine except the calls to Anthropic itself.
+          The agent needs a {data.providerLabel} key before it can do anything.
+          Nothing leaves this machine except the calls to {data.providerLabel}{" "}
+          itself.
         </p>
       )}
 
@@ -98,7 +120,7 @@ export function AnthropicKeyField() {
           inputMode="text"
           autoComplete="off"
           spellCheck={false}
-          placeholder="sk-ant-…"
+          placeholder={data.placeholder}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
@@ -116,12 +138,22 @@ export function AnthropicKeyField() {
         </Button>
       </div>
 
-      <p className="flex items-start gap-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground">
-        <Lock className="mt-0.5 size-3 shrink-0" />
-        Encrypted with AES-256-GCM in the local vault and tested against
-        Anthropic before it is saved. It is never returned by the API once
-        stored.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-start gap-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground">
+          <Lock className="mt-0.5 size-3 shrink-0" />
+          Encrypted with AES-256-GCM in the local vault and tested against{" "}
+          {data.providerLabel} before it is saved.
+        </p>
+        <a
+          href={data.consoleUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1 text-[0.6875rem] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        >
+          Get a key
+          <ExternalLink className="size-2.5" />
+        </a>
+      </div>
     </div>
   );
 }

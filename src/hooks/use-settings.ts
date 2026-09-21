@@ -22,7 +22,7 @@ export interface AccountsResponse {
 }
 
 export const ACCOUNTS_KEY = ["google-accounts"] as const;
-export const ANTHROPIC_KEY = ["anthropic-key"] as const;
+export const MODEL_KEY = ["model-key"] as const;
 
 export function useGoogleAccounts() {
   return useQuery({
@@ -78,44 +78,45 @@ export function useCheckAccount() {
   });
 }
 
-export interface AnthropicKeyStatus {
+export interface ModelKeyStatus {
+  provider: "anthropic" | "google";
+  providerLabel: string;
   source: "vault" | "env" | "none";
   hint: string | null;
   updatedAt: string | null;
+  envVar: string;
+  placeholder: string;
+  consoleUrl: string;
+  freeTier: boolean;
 }
 
-export function useAnthropicKey() {
+export function useModelKey() {
   return useQuery({
-    queryKey: ANTHROPIC_KEY,
-    queryFn: () => apiFetch<AnthropicKeyStatus>("/api/settings/anthropic-key"),
+    queryKey: MODEL_KEY,
+    queryFn: () => apiFetch<ModelKeyStatus>("/api/settings/model-key"),
   });
 }
 
-/**
- * Saves a key. The server verifies it against Anthropic first and returns the
- * masked status; the plaintext is never read back, so the client has no copy
- * to leak once the request is done.
- */
-export function useSaveAnthropicKey() {
+export function useSaveModelKey() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (key: string) =>
-      apiFetch<{ saved: boolean; status: AnthropicKeyStatus }>(
-        "/api/settings/anthropic-key",
+      apiFetch<{ saved: boolean; status: ModelKeyStatus }>(
+        "/api/settings/model-key",
         { method: "PUT", body: JSON.stringify({ key }) },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ANTHROPIC_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: MODEL_KEY }),
   });
 }
 
-export function useClearAnthropicKey() {
+export function useClearModelKey() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiFetch<{ cleared: boolean; status: AnthropicKeyStatus }>(
-        "/api/settings/anthropic-key",
+      apiFetch<{ cleared: boolean; status: ModelKeyStatus }>(
+        "/api/settings/model-key",
         { method: "DELETE" },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ANTHROPIC_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: MODEL_KEY }),
   });
 }

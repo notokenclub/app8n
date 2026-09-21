@@ -2,7 +2,7 @@
 
 import { useTheme } from "next-themes";
 import { Moon, Sun } from "lucide-react";
-import { AnthropicKeyField } from "@/components/settings/anthropic-key-field";
+import { ModelKeyField } from "@/components/settings/model-key-field";
 import { GoogleAccounts } from "@/components/settings/google-accounts";
 import { PushNotifications } from "@/components/settings/push-notifications";
 import { PageHeader } from "@/components/shell/page-header";
@@ -45,10 +45,10 @@ export default function SettingsPage() {
         </Section>
 
         <Section
-          title="Anthropic API key"
+          title="Model API key"
           description="The model behind the agent. Stored in the encrypted local vault."
         >
-          <AnthropicKeyField />
+          <ModelKeyField />
         </Section>
 
         <Section

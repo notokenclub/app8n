@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/auth/session";
 import {
-  clearAnthropicKey,
-  getAnthropicKeyStatus,
-  setAnthropicKey,
-  testAnthropicKey,
-} from "@/lib/agent/api-key";
-import { DEFAULT_MODEL_ID } from "@/lib/agent/model";
+  activeProvider,
+  clearModelKey,
+  getKeyStatus,
+  setModelKey,
+} from "@/lib/agent/model-key";
+import { modelIdFor } from "@/lib/agent/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -18,16 +18,16 @@ interface PutBody {
 
 export async function GET() {
   const userId = await getCurrentUserId();
-  return NextResponse.json(await getAnthropicKeyStatus(userId));
+  return NextResponse.json(await getKeyStatus(userId));
 }
 
 /**
- * Stores an Anthropic key in the encrypted vault.
+ * Stores the model API key for the active provider in the encrypted vault.
  *
- * The response never echoes the key — only the masked status — so a key
- * cannot be recovered by reading it back through the API, and it is verified
- * against Anthropic before it is written so a typo surfaces here rather than
- * as a failed automation hours later.
+ * The response never echoes the key — only the masked status — so a key cannot
+ * be recovered by reading it back through the API, and it is verified against
+ * the provider before it is written so a typo surfaces here rather than as a
+ * failed automation hours later.
  */
 export async function PUT(request: Request) {
   const userId = await getCurrentUserId();
@@ -41,8 +41,10 @@ export async function PUT(request: Request) {
     );
   }
 
+  const provider = await activeProvider(userId);
+
   if (body.test !== false) {
-    const result = await testAnthropicKey(key, DEFAULT_MODEL_ID);
+    const result = await provider.testKey(key, modelIdFor(provider));
     if (!result.ok) {
       return NextResponse.json(
         { error: "key_rejected", message: result.error },
@@ -51,18 +53,18 @@ export async function PUT(request: Request) {
     }
   }
 
-  await setAnthropicKey(userId, key);
+  await setModelKey(userId, provider, key);
   return NextResponse.json({
     saved: true,
-    status: await getAnthropicKeyStatus(userId),
+    status: await getKeyStatus(userId),
   });
 }
 
 export async function DELETE() {
   const userId = await getCurrentUserId();
-  await clearAnthropicKey(userId);
+  await clearModelKey(userId, await activeProvider(userId));
   return NextResponse.json({
     cleared: true,
-    status: await getAnthropicKeyStatus(userId),
+    status: await getKeyStatus(userId),
   });
 }

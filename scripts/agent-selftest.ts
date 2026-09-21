@@ -898,6 +898,147 @@ check("an approved run resumes its remaining steps", async () => {
   );
 });
 
+// --- Model providers ---------------------------------------------------------
+
+/** Runs `body` with the given env vars applied, restoring them afterwards. */
+async function withEnv(
+  vars: Record<string, string | undefined>,
+  body: () => Promise<void>,
+): Promise<void> {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(vars)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    await body();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+check("the provider is auto-detected from whichever key exists", async () => {
+  // Saving a Gemini key in Settings has to be enough on its own. Requiring an
+  // environment variable as well would mean the UI accepted a key that never
+  // took effect — the same dead-config trap as the unread OPENAI_API_KEY that
+  // sat in .env.example while nothing read it.
+  const { activeProvider, setModelKey, clearModelKey } = await import(
+    "../src/lib/agent/model-key"
+  );
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+    },
+    async () => {
+      // Nothing anywhere: fall back rather than throw, so Settings can render.
+      assert.equal((await activeProvider(userId)).id, "anthropic");
+
+      await setModelKey(userId, PROVIDERS.google, "AIzaTestKey123");
+      assert.equal((await activeProvider(userId)).id, "google");
+
+      await clearModelKey(userId, PROVIDERS.google);
+      assert.equal((await activeProvider(userId)).id, "anthropic");
+    },
+  );
+});
+
+check("an explicit provider choice overrides auto-detection", async () => {
+  const { activeProvider } = await import("../src/lib/agent/model-key");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: "google",
+      ANTHROPIC_API_KEY: "sk-ant-present",
+      GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+    },
+    async () => {
+      // Named explicitly, so it wins even though only Anthropic has a key.
+      assert.equal((await activeProvider(userId)).id, "google");
+    },
+  );
+});
+
+check("an unknown provider name fails loudly", async () => {
+  const { configuredProvider } = await import("../src/lib/agent/providers");
+
+  await withEnv({ APP8N_MODEL_PROVIDER: "gpt5" }, async () => {
+    // Silently falling back would strand the user on a provider they did not
+    // choose, with no clue why their key is ignored.
+    assert.throws(() => configuredProvider(), /APP8N_MODEL_PROVIDER/);
+  });
+});
+
+check("each provider's key is stored under its own vault name", async () => {
+  const { setModelKey, resolveKeyFor, clearModelKey } = await import(
+    "../src/lib/agent/model-key"
+  );
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv(
+    { ANTHROPIC_API_KEY: undefined, GOOGLE_GENERATIVE_AI_API_KEY: undefined },
+    async () => {
+      await setModelKey(userId, PROVIDERS.google, "AIzaOnlyGoogle");
+
+      const google = await resolveKeyFor(userId, PROVIDERS.google);
+      assert.equal(google.key, "AIzaOnlyGoogle");
+      assert.equal(google.source, "vault");
+
+      // A key for one provider must never satisfy another.
+      const anthropic = await resolveKeyFor(userId, PROVIDERS.anthropic);
+      assert.equal(anthropic.key, null);
+      assert.equal(anthropic.source, "none");
+
+      await clearModelKey(userId, PROVIDERS.google);
+    },
+  );
+});
+
+check("the model id is overridable per deployment", async () => {
+  const { modelIdFor, PROVIDERS } = await import("../src/lib/agent/providers");
+
+  assert.equal(modelIdFor(PROVIDERS.google), "gemini-2.5-flash");
+  await withEnv({ APP8N_MODEL_ID: "gemini-3-flash-preview" }, async () => {
+    assert.equal(modelIdFor(PROVIDERS.google), "gemini-3-flash-preview");
+  });
+});
+
+check("every provider is fully described for the settings UI", async () => {
+  // The key field renders entirely from this table, so a provider missing its
+  // console URL or placeholder would ship as an unfillable form.
+  const { MODEL_PROVIDERS, PROVIDERS } = await import(
+    "../src/lib/agent/providers"
+  );
+
+  for (const id of MODEL_PROVIDERS) {
+    const provider = PROVIDERS[id];
+    assert.equal(provider.id, id, `${id} must be keyed by its own id`);
+    for (const field of [
+      "label",
+      "defaultModel",
+      "envVar",
+      "vaultKeyName",
+      "placeholder",
+      "consoleUrl",
+    ] as const) {
+      assert.ok(provider[field], `${id} is missing ${field}`);
+    }
+    assert.equal(typeof provider.createModel, "function");
+    assert.equal(typeof provider.testKey, "function");
+  }
+
+  // Two providers sharing a vault name would overwrite each other's keys.
+  const names = MODEL_PROVIDERS.map((id) => PROVIDERS[id].vaultKeyName);
+  assert.equal(new Set(names).size, names.length, "vault names must be unique");
+});
+
 async function main() {
   migrate(db, { migrationsFolder: "drizzle" });
 

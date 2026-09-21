@@ -27,8 +27,9 @@
     "cap:deeplink": "tsx scripts/register-deep-link.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.49",
-    "@ai-sdk/react": "^4.0.95",
+    "@ai-sdk/anthropic": "^4.0.58",
+    "@ai-sdk/google": "^4.0.76",
+    "@ai-sdk/react": "^4.0.110",
     "@base-ui/react": "^1.8.0",
     "@capacitor/android": "^8.5.1",
     "@capacitor/app": "^8.1.1",
@@ -39,7 +40,7 @@
     "@capacitor/push-notifications": "^8.1.2",
     "@tanstack/react-query": "^5.102.8",
     "@xyflow/react": "^12.11.6",
-    "ai": "^7.0.92",
+    "ai": "^7.0.107",
     "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.2.5",

@@ -1,36 +1,30 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";
-import { resolveAnthropicKey } from "./api-key";
-
-export const DEFAULT_MODEL_ID = "claude-opus-4-7";
-
-export function isAgentConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
-}
-
-/** True when either the vault or the environment can supply a key. */
-export async function isAgentConfiguredFor(userId: string): Promise<boolean> {
-  const { key } = await resolveAnthropicKey(userId);
-  return Boolean(key);
-}
+import { resolveModelKey } from "./model-key";
+import { modelIdFor } from "./providers";
 
 export class AgentNotConfiguredError extends Error {
-  constructor() {
+  constructor(envVar = "an API key") {
     super(
-      "No Anthropic API key. Add one in Settings, or set ANTHROPIC_API_KEY in .env.local.",
+      `No model API key. Add one in Settings, or set ${envVar} in .env.local.`,
     );
     this.name = "AgentNotConfiguredError";
   }
 }
 
+/** True when either the vault or the environment can supply a key. */
+export async function isAgentConfiguredFor(userId: string): Promise<boolean> {
+  const { key } = await resolveModelKey(userId);
+  return Boolean(key);
+}
+
 /**
- * Resolves the chat model. Read lazily so the process can boot — and the
- * connector self-tests can run — without an API key present.
+ * Advisory boot-time check for the worker. It has no user to resolve, so it
+ * can only report whether *some* provider key is present in the environment.
  */
-export function agentModel(modelId = DEFAULT_MODEL_ID): LanguageModel {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new AgentNotConfiguredError();
-  return createAnthropic({ apiKey })(modelId);
+export function isAgentConfiguredInEnv(): boolean {
+  return Boolean(
+    process.env.ANTHROPIC_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+  );
 }
 
 /**
@@ -42,9 +36,15 @@ export function agentModel(modelId = DEFAULT_MODEL_ID): LanguageModel {
  */
 export async function agentModelFor(
   userId: string,
-  modelId = DEFAULT_MODEL_ID,
+  modelId?: string,
 ): Promise<LanguageModel> {
-  const { key } = await resolveAnthropicKey(userId);
-  if (!key) throw new AgentNotConfiguredError();
-  return createAnthropic({ apiKey: key })(modelId);
+  const { provider, key } = await resolveModelKey(userId);
+  if (!key) throw new AgentNotConfiguredError(provider.envVar);
+  return provider.createModel(key, modelId ?? modelIdFor(provider));
+}
+
+/** The message shown when a run cannot start, naming the right variable. */
+export async function notConfiguredMessage(userId: string): Promise<string> {
+  const { provider } = await resolveModelKey(userId);
+  return `No ${provider.label} API key. Add one in Settings, or set ${provider.envVar} in .env.local.`;
 }
