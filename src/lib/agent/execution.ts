@@ -1,7 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   executionLogs,
+  workflows,
+  type ExecutionLog,
   type ExecutionStatus,
   type ExecutionStep,
   type TriggerType,
@@ -92,4 +94,101 @@ export async function getExecution(executionId: string) {
   return db.query.executionLogs.findFirst({
     where: eq(executionLogs.id, executionId),
   });
+}
+
+export interface ExecutionListItem {
+  execution: ExecutionLog;
+  workflowTitle: string | null;
+}
+
+export interface ListExecutionsOptions {
+  workflowId?: string;
+  limit?: number;
+}
+
+/** Newest first, which is the only order a run history is ever read in. */
+export const EXECUTIONS_PAGE_SIZE = 50;
+
+/**
+ * Run history for a user, joined to the workflow that produced each run.
+ *
+ * `stepsJson` is deliberately not selected here: a single trace can carry
+ * every tool result a run touched, and a list of fifty of them would dwarf the
+ * summary it is meant to be. The detail view fetches one run's steps instead.
+ */
+export async function listExecutions(
+  userId: string,
+  options: ListExecutionsOptions = {},
+): Promise<ExecutionListItem[]> {
+  const rows = await db
+    .select({ execution: executionLogs, workflowTitle: workflows.title })
+    .from(executionLogs)
+    .leftJoin(workflows, eq(executionLogs.workflowId, workflows.id))
+    .where(
+      options.workflowId
+        ? and(
+            eq(executionLogs.userId, userId),
+            eq(executionLogs.workflowId, options.workflowId),
+          )
+        : eq(executionLogs.userId, userId),
+    )
+    .orderBy(desc(executionLogs.createdAt))
+    .limit(options.limit ?? EXECUTIONS_PAGE_SIZE);
+
+  return rows.map((row) => ({
+    execution: row.execution,
+    workflowTitle: row.workflowTitle,
+  }));
+}
+
+/** Ownership is part of the query, so another user's run id simply misses. */
+export async function getExecutionForUser(
+  executionId: string,
+  userId: string,
+): Promise<ExecutionListItem | undefined> {
+  const [row] = await db
+    .select({ execution: executionLogs, workflowTitle: workflows.title })
+    .from(executionLogs)
+    .leftJoin(workflows, eq(executionLogs.workflowId, workflows.id))
+    .where(
+      and(eq(executionLogs.id, executionId), eq(executionLogs.userId, userId)),
+    )
+    .limit(1);
+
+  return row
+    ? { execution: row.execution, workflowTitle: row.workflowTitle }
+    : undefined;
+}
+
+export interface ExecutionSummary {
+  id: string;
+  workflowId: string | null;
+  workflowTitle: string | null;
+  status: ExecutionStatus;
+  trigger: TriggerType;
+  error: string | null;
+  durationMs: number | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+/** One serialisation shared by the list and detail routes, so the client has
+ * a single shape to model rather than two that drift. */
+export function toExecutionSummary({
+  execution,
+  workflowTitle,
+}: ExecutionListItem): ExecutionSummary {
+  return {
+    id: execution.id,
+    workflowId: execution.workflowId,
+    workflowTitle,
+    status: execution.status,
+    trigger: execution.trigger,
+    error: execution.errorTrace,
+    durationMs: execution.durationMs,
+    startedAt: execution.startedAt?.toISOString() ?? null,
+    finishedAt: execution.finishedAt?.toISOString() ?? null,
+    createdAt: execution.createdAt.toISOString(),
+  };
 }

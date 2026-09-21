@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { Moon, Sun } from "lucide-react";
 import { AnthropicKeyField } from "@/components/settings/anthropic-key-field";
 import { GoogleAccounts } from "@/components/settings/google-accounts";
+import { PushNotifications } from "@/components/settings/push-notifications";
 import { PageHeader } from "@/components/shell/page-header";
 import { Switch } from "@/components/ui/switch";
 
@@ -48,6 +49,13 @@ export default function SettingsPage() {
           description="The model behind the agent. Stored in the encrypted local vault."
         >
           <AnthropicKeyField />
+        </Section>
+
+        <Section
+          title="Notifications"
+          description="Where an approval gate reaches you when the app is closed."
+        >
+          <PushNotifications />
         </Section>
 
         <Section

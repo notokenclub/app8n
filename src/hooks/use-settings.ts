@@ -43,6 +43,41 @@ export function useDisconnectAccount() {
   });
 }
 
+export type ServiceProbeStatus = "ok" | "failed" | "not_exercisable";
+
+export interface ServiceProbe {
+  service: string;
+  status: ServiceProbeStatus;
+  error?: string;
+}
+
+export interface AccountHealth {
+  accountId: string;
+  email: string;
+  ok: boolean;
+  needsReconnect: boolean;
+  mock: boolean;
+  error?: string;
+  services: ServiceProbe[];
+  checkedAt: string;
+}
+
+/**
+ * Verifies a linked account against Google for real.
+ *
+ * A mutation rather than a query: it spends live API calls, so it runs when
+ * the user asks for it and never on a background refetch.
+ */
+export function useCheckAccount() {
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      apiFetch<AccountHealth>(
+        `/api/auth/google/health?accountId=${encodeURIComponent(accountId)}`,
+        { method: "POST" },
+      ),
+  });
+}
+
 export interface AnthropicKeyStatus {
   source: "vault" | "env" | "none";
   hint: string | null;

@@ -49,6 +49,18 @@ export function useWorkflows() {
   });
 }
 
+export function useDeleteWorkflow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ id: string; deleted: boolean }>(
+        `/api/workflows?id=${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: WORKFLOWS_KEY }),
+  });
+}
+
 export function useSetWorkflowStatus() {
   const queryClient = useQueryClient();
   return useMutation({

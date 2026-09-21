@@ -6,7 +6,7 @@ import {
   executionLogs,
   type ApprovalRequest,
 } from "@/lib/db/schema";
-import { getTool, requiresApproval } from "./tools";
+import { findTool, requiresApproval } from "./tools";
 
 /** How long an unanswered approval stays actionable. */
 export const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
@@ -194,7 +194,7 @@ export async function resolveApproval(
 
   let resolvedParameters = existing.parametersJson;
   if (params.approved && params.parameters) {
-    const toolDef = getTool(existing.actionName);
+    const toolDef = findTool(existing.actionName);
     if (!toolDef) {
       throw new ApprovalError(
         `Unknown action ${existing.actionName}.`,

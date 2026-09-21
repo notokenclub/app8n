@@ -2,14 +2,23 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, Plus, TriangleAlert, Unplug } from "lucide-react";
+import {
+  CircleCheckBig,
+  Loader2,
+  Plus,
+  RefreshCw,
+  TriangleAlert,
+  Unplug,
+} from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  useCheckAccount,
   useDisconnectAccount,
   useGoogleAccounts,
+  type AccountHealth,
   type LinkedAccount,
 } from "@/hooks/use-settings";
 import { apiUrl } from "@/lib/client-api";
@@ -49,10 +58,75 @@ function ServiceGrid({ account }: { account: LinkedAccount }) {
   );
 }
 
+/**
+ * Result of a live check.
+ *
+ * Mock mode is called out explicitly: a green tick that only proves the
+ * fixtures work would be exactly the false confidence this check exists to
+ * remove.
+ */
+function HealthReadout({ health }: { health: AccountHealth }) {
+  const failed = health.services.filter((probe) => probe.status === "failed");
+
+  return (
+    <div
+      className={cn(
+        "rounded-xl border px-3 py-2.5 text-xs",
+        health.ok
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+          : "border-destructive/30 bg-destructive/10 text-destructive",
+      )}
+    >
+      <p className="flex items-center gap-1.5 font-medium">
+        {health.ok ? (
+          <CircleCheckBig className="size-3.5 shrink-0" />
+        ) : (
+          <TriangleAlert className="size-3.5 shrink-0" />
+        )}
+        {health.ok
+          ? health.mock
+            ? "Mock connectors responded — this proves nothing about Google"
+            : "Live check passed"
+          : health.needsReconnect
+            ? "Reconnect needed"
+            : "Live check failed"}
+      </p>
+
+      {health.error && <p className="mt-1 leading-relaxed">{health.error}</p>}
+
+      {failed.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {failed.map((probe) => (
+            <li key={probe.service} className="leading-relaxed">
+              <span className="font-medium">
+                {SERVICE_LABELS[probe.service as keyof typeof SERVICE_LABELS] ??
+                  probe.service}
+                :
+              </span>{" "}
+              {probe.error}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {health.ok && (
+        <p className="mt-1 leading-relaxed opacity-80">
+          Checked{" "}
+          {health.services.filter((probe) => probe.status === "ok").length} of{" "}
+          {health.services.length} granted services. Docs and Sheets have no
+          listing call to probe without a file id.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function GoogleAccounts() {
   const { data, isLoading } = useGoogleAccounts();
   const disconnect = useDisconnectAccount();
+  const check = useCheckAccount();
   const [confirming, setConfirming] = React.useState<string | null>(null);
+  const [health, setHealth] = React.useState<Record<string, AccountHealth>>({});
 
   const connect = () => {
     // A full navigation, not fetch: Google's consent screen has to be driven
@@ -133,6 +207,37 @@ export function GoogleAccounts() {
           </div>
 
           <ServiceGrid account={account} />
+
+          {health[account.id] && <HealthReadout health={health[account.id]} />}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={check.isPending}
+            onClick={() =>
+              check.mutate(account.id, {
+                onSuccess: (result) =>
+                  setHealth((current) => ({
+                    ...current,
+                    [account.id]: result,
+                  })),
+                onError: (error) =>
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Could not check the connection.",
+                  ),
+              })
+            }
+          >
+            {check.isPending && check.variables === account.id ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RefreshCw />
+            )}
+            Test connection
+          </Button>
 
           {confirming === account.id ? (
             <div className="flex gap-2">

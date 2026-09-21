@@ -19,11 +19,12 @@
     "seed:blueprints": "tsx scripts/seed-blueprints.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "worker": "tsx scripts/worker.ts",
-    "cap:sync": "cap sync",
+    "cap:sync": "cap sync && tsx scripts/register-deep-link.ts",
     "cap:add:ios": "cap add ios",
     "cap:add:android": "cap add android",
     "cap:open:ios": "cap open ios",
-    "cap:open:android": "cap open android"
+    "cap:open:android": "cap open android",
+    "cap:deeplink": "tsx scripts/register-deep-link.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.49",

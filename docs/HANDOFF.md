@@ -3,8 +3,8 @@
 Everything needed to pick this project up cold — what exists, why it was built this way,
 and where the seams are. If you're new, read this after the README.
 
-Current state: **Phases 1–5 complete.** Typecheck and lint clean, 8/8 vault checks,
-26/26 Google checks, 16/16 agent checks, production build succeeds with 13 routes.
+Current state: **Phases 1–6 complete.** Typecheck and lint clean, 8/8 vault checks,
+26/26 Google checks, 28/28 agent checks, production build succeeds with 18 routes.
 
 ---
 
@@ -74,11 +74,15 @@ src/
       approvals/route.ts, approvals/[id]/route.ts      HITL list + resolve
       workflows/route.ts                               workflow list
       settings/anthropic-key/route.ts                  vault-stored API key
+      executions/route.ts, executions/[id]/route.ts    run history + trace
+      push/devices/route.ts                            push device registration
+      auth/google/health/route.ts                      live connection probe
     page.tsx              chat home
-    approvals/page.tsx    workflows/page.tsx    settings/page.tsx
+    approvals/page.tsx    workflows/page.tsx    settings/page.tsx    runs/page.tsx
   components/
     chat/{chat-view,composer,tool-part}.tsx
     approvals/{approval-card,swipe-confirm}.tsx
+    runs/{run-list,run-trace}.tsx
     workflows/{workflow-canvas,workflow-list}.tsx
     shell/{app-shell,page-header}.tsx
     ui/                   17 shadcn primitives
@@ -92,11 +96,16 @@ src/
       tools.ts toolset.ts orchestrator.ts prompt.ts
       approvals.ts execute-approved.ts execution.ts context.ts model.ts api-key.ts
     scheduler/{jobs,worker}.ts
+    push/{devices,dispatch,fcm}.ts   approval notifications
+    workflows/authoring.ts           shared blueprint validation + save
+    google/health.ts                 live credential verification
     blueprints.ts         the three starter automations, typed
-  hooks/                  use-{approvals,workflows,settings,media-query,now,speech-input}
+  hooks/                  use-{approvals,workflows,executions,push,settings,media-query,now,speech-input}
 scripts/                  keygen, vault-selftest, google-selftest, agent-selftest,
-                          seed-blueprints, seed-demo, worker, selftest-env
-drizzle/                  0000_gorgeous_wildside.sql, 0001_gifted_doorman.sql
+                          seed-blueprints, seed-demo, worker, selftest-env,
+                          register-deep-link
+drizzle/                  0000_gorgeous_wildside.sql, 0001_gifted_doorman.sql,
+                          0002_motionless_punisher.sql
 mobile/shell/index.html   capacitor.config.ts
 ```
 
@@ -104,7 +113,7 @@ mobile/shell/index.html   capacitor.config.ts
 
 ## 4. Database schema
 
-Six tables in `src/lib/db/schema.ts`, all ownership-scoped by `user_id` with cascading
+Seven tables in `src/lib/db/schema.ts`, all ownership-scoped by `user_id` with cascading
 deletes. The app is single-user local-first by default, but the schema is multi-user and
 queries are written that way deliberately.
 
@@ -136,6 +145,11 @@ cancelled`. Two JSON columns carry the weight:
 Note the column is `inputPayload`, not `input`. SQLite silently accepts a wrong key and
 drops it, leaving a null payload — only `tsc` catches this. It has bitten us once.
 
+**`push_devices`** — one row per device that should receive approval notifications,
+unique on `token` so a reinstalled app cannot be notified twice. The token is a delivery
+address issued by APNs/FCM, not a credential of the user's, so it is stored in the clear
+rather than in the vault.
+
 **`approval_requests`** — the HITL gate, one row per decision.
 
 - `parametersJson` is what the agent *proposed*.
@@ -150,7 +164,7 @@ drops it, leaving a null payload — only `tsc` catches this. It has bitten us o
 
 ## 5. The tool registry
 
-21 tools in `src/lib/agent/tools.ts`. Approval is **derived, not hand-maintained**:
+22 tools in `src/lib/agent/tools.ts`. Approval is **derived, not hand-maintained**:
 
 ```ts
 requiresApproval: config.requiresApproval ?? config.impact === "external"
@@ -178,6 +192,7 @@ An unknown tool name gates rather than executes.
 | Docs | `docs_create`, **`docs_append_text`**, `docs_read` |
 | Drive | `drive_search` |
 | Tasks | `tasks_list`, `tasks_create`, `tasks_complete` |
+| Core | `workflow_save` |
 
 **Bold** tools are gated by the HITL approval flow.
 
@@ -251,12 +266,13 @@ npm run typecheck
 npm run lint
 npm run vault:selftest      # 8 checks
 npm run google:selftest     # 26 checks
-npm run agent:selftest      # 16 checks
+npm run agent:selftest      # 28 checks
 
 npm run db:generate | db:migrate | db:push | db:studio
 npm run vault:keygen        # mint APP8N_ENCRYPTION_KEY
 
-npm run cap:sync
+npm run cap:sync            # cap sync, then re-register the app8n:// deep link
+npm run cap:deeplink        # re-register the deep link on its own
 npm run cap:add:ios | cap:add:android | cap:open:ios | cap:open:android
 ```
 
@@ -278,6 +294,7 @@ Full annotated list lives in `.env.example`. The ones that trip people up:
 | `NEXT_PUBLIC_APP8N_API_URL` | Backend the client calls. Leave blank for same-origin web; set it for the native shell. |
 | `APP8N_MOBILE_REDIRECT_URI` | `app8n://auth/callback`. Must match the URL scheme registered in the iOS and Android projects or OAuth will complete and then strand the user. |
 | `DATABASE_URL` | `file:./data/app8n.db` locally; point at Postgres/Supabase for server mode. |
+| `APP8N_FCM_SERVICE_ACCOUNT` | Firebase service account (inline JSON or a path) for approval push. Unset means push is skipped, never failed — the Approvals tab stays the channel of record. |
 
 `.env.local` and `data/app8n.db` are gitignored. `.env.example` contains only placeholders
 and localhost URLs.
@@ -305,21 +322,122 @@ npm run build
 
 ---
 
-## 11. Where to pick up
+## 11. Phase 6: what was just built
 
-Phases 1–5 are done. Roughly in order of value:
+### Workflow authoring
 
-1. **Real Google credentials end-to-end.** Everything so far is verified against
-   `APP8N_MOCK_GOOGLE=1`. The OAuth flow, refresh-token handling and scope consent have
-   not yet met a live Workspace account.
-2. **Native builds.** Capacitor configuration is written, but the iOS and Android projects
-   are not generated or committed, and the `app8n://` scheme still needs registering in
-   both.
-3. **Execution history UI.** `stepsJson` captures a rich trace that nothing currently
-   renders — there is no run-history view at all.
-4. **Workflow authoring.** The canvas is read-only. Turning a chat into a saved automation
-   ("make that a daily thing") is the headline feature still missing.
-5. **Approval expiry.** `expiresAt` exists on `approval_requests`; nothing sweeps it, so a
-   `PENDING` gate lives forever.
-6. **Push notifications.** `@capacitor/push-notifications` is installed but unwired. It is
-   the natural delivery channel for an approval gate that fires at 7am.
+`src/lib/workflows/authoring.ts` is the single validation-and-save path, shared by the
+agent's `workflow_save` tool and `POST/PATCH /api/workflows`. Both go through it so a
+blueprint created from chat and one created from the UI are the same kind of object.
+
+The steps a user describes become `nodesJson` **and** the plan `buildRunInstruction`
+reads back into the scheduled run — the same structure the canvas draws. This is the
+§7 lesson enforced rather than restated, and `agent-selftest` asserts the round trip.
+
+Two things fail closed. An unknown tool name is rejected rather than saved, because a
+step naming a tool that does not exist renders in the canvas and silently does nothing
+on every run. And switching a trigger away from `cron` clears `cronExpression`, so a
+stale schedule cannot resurrect itself later.
+
+`workflow_save` is `impact: "write"`, so it is ungated: saving a local automation is not
+an externally visible act. The actions it later performs are gated individually when it
+runs, which is where the human decision actually belongs.
+
+### Run history
+
+`stepsJson` was captured from the first run and rendered nowhere, which made every failed
+overnight job a dead end. `/runs` is that screen: `RunTrace` renders the discriminated
+union directly, reusing `tool-display` and `tool-result` so a trace and the live chat
+describe a tool call identically.
+
+The list route deliberately does not select `stepsJson` — one trace can carry every tool
+result a run touched, and fifty of them would dwarf the summary. The detail route fetches
+one run's steps instead.
+
+### Push notifications
+
+`src/lib/push/` is device registry, dispatcher and an FCM HTTP v1 transport implemented
+directly (a service-account JWT-bearer grant and one POST — all firebase-admin would have
+done for us, without the dependency tree).
+
+Delivery is best-effort by design: **a failed push must never fail the run that raised the
+gate.** The approval is already durable and `/approvals` polls for it, so push is an
+accelerant, not the channel of record. With no provider configured the dispatcher reports
+`skipped: "not_configured"` and the run is unaffected. A token FCM reports as
+`UNREGISTERED` is deleted rather than retried forever.
+
+The notification payload carries identifiers only. The card is re-fetched from the backend
+on open, so parameters never travel through a push provider.
+
+### Resuming a parked run
+
+`messagesJson` was written on every parked run and read by nothing — the same dead-state
+failure §7 describes, in the column §4 calls "what makes a run resumable". It is now true:
+`executeApprovedAction` hands the parked conversation back to the agent with the approved
+call's *result*, and the run continues its remaining steps in the same execution row.
+
+The model is given the result, never the parameters it originally proposed, so what the
+human actually approved is what the rest of the run builds on. Any further gated call
+opens a new gate as usual — resumption is not a way around the safety gate.
+
+Rejection still cancels the run outright rather than resuming with a denial, matching the
+system prompt's instruction to acknowledge a denied action and stop.
+
+If the resumed leg fails, the execution is marked failed — but the trace still shows the
+approved action's result before the error, so "the email sent, then the follow-up broke"
+stays readable rather than collapsing into a bare failure.
+
+### Live Google verification
+
+`src/lib/google/health.ts` makes the same round trip the agent's tools make — token
+refresh included — against the endpoints the connectors actually use. A probe that
+exercised a different API could pass while the tools still failed.
+
+It reports `mock: true` when it ran against fixtures, because a green tick that conflated
+"verified against Google" with "verified against fixtures" would be exactly the false
+confidence the check exists to remove. Sheets and Docs report `not_exercisable`: neither
+API offers a listing call that proves a grant without a file id, and claiming otherwise
+would be a lie of the same kind.
+
+`needsReconnect` distinguishes a dead grant — where only re-consent helps — from a
+transient failure, so the UI sends people to the right remedy.
+
+### Mobile deep link
+
+`scripts/register-deep-link.ts` writes the `app8n://` scheme into the generated iOS and
+Android projects, and runs as part of `npm run cap:sync` so a regenerated project cannot
+silently lose it. The scheme is derived from `APP8N_MOBILE_REDIRECT_URI`, so the backend's
+redirect and the native registration cannot drift.
+
+The iOS guard is scoped to the `CFBundleURLTypes` section on purpose: the app's own name
+appears as `<string>app8n</string>` under `CFBundleName`, and matching that anywhere in the
+file reported the scheme as already registered on a project where it was not. The
+self-test caught this.
+
+---
+
+## 12. Where to pick up
+
+1. **Generate and commit the native projects.** `cap add ios` needs macOS and Xcode;
+   `cap add android` needs the Android SDK. Neither was available where Phase 6 was built,
+   and committing generated projects that had never been built would have been the same
+   mistake as a canvas the runtime never saw. Run both on a suitable machine, then
+   `npm run cap:sync` — the deep link registers itself, and `register-deep-link` is
+   idempotent and self-tested against realistic fixtures.
+2. **Real Google credentials end-to-end.** Still the highest-value unknown, but it is now
+   a button rather than an investigation: connect an account and press **Test connection**
+   in Settings. The OAuth flow, refresh-token rotation and scope consent have still never
+   met a live Workspace account.
+3. **Push against a real device.** The FCM transport is implemented and its no-provider
+   path is tested, but no notification has been delivered to a physical phone. Needs a
+   Firebase project, `APP8N_FCM_SERVICE_ACCOUNT`, and the native projects from (1).
+4. **Editing a blueprint from the UI.** The canvas is still read-only; today you change an
+   automation by saying so in chat, which is the intended primary path. The server side for
+   a visual editor already exists — `PATCH /api/workflows` accepts a full draft and
+   validates it through the same `saveWorkflow` the agent uses — so this is a UI job, not a
+   backend one. No client hook is shipped for it deliberately: an unused one would be the
+   dead code this codebase keeps warning about.
+5. **Approval expiry is done.** `expireStaleApprovals` sweeps on every worker tick and on
+   every `GET /api/approvals`, and `resolveApproval` re-checks inline, so an expired gate
+   cannot execute even if the sweep never ran. The Phase 5 note listing this as missing was
+   already stale.

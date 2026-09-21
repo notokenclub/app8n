@@ -6,6 +6,10 @@ import * as calendar from "@/lib/google/services/calendarService";
 import * as sheets from "@/lib/google/services/sheetsService";
 import * as docs from "@/lib/google/services/docsService";
 import * as tasks from "@/lib/google/services/tasksService";
+import {
+  saveWorkflow,
+  workflowDraftSchema,
+} from "@/lib/workflows/authoring";
 
 /**
  * `read`     — no side effects.
@@ -323,6 +327,34 @@ export const AGENT_TOOLS: AgentTool[] = [
     }),
     run: (args, ctx) => tasks.completeTask({ ...ctx, ...args }),
   }),
+
+  defineTool({
+    name: "workflow_save",
+    description:
+      "Save the current request as a reusable automation, for when the user wants something to happen again — 'do that every morning', 'make this a daily thing', 'watch for these emails'. Describe the steps you would take; a step with no tool is one where you use your own judgement. Confirm the schedule with the user before saving.",
+    service: "core",
+    // Local state the user owns, visible to nobody else. The actions the saved
+    // automation later performs are gated individually when it runs, which is
+    // where the human decision actually belongs.
+    impact: "write",
+    parameters: workflowDraftSchema,
+    run: async (args, ctx) => {
+      const workflow = await saveWorkflow({
+        userId: ctx.userId,
+        draft: args,
+        knownTools: agentToolNames(),
+      });
+
+      return {
+        id: workflow.id,
+        title: workflow.title,
+        status: workflow.status,
+        triggerType: workflow.triggerType,
+        cronExpression: workflow.cronExpression,
+        stepCount: workflow.nodesJson.length,
+      };
+    },
+  }),
 ];
 
 export const TOOLS_BY_NAME: Record<string, AgentTool> = Object.fromEntries(
@@ -333,6 +365,21 @@ export function getTool(name: string): AgentTool {
   const tool = TOOLS_BY_NAME[name];
   if (!tool) throw new Error(`Unknown tool: ${name}`);
   return tool;
+}
+
+/** The registered tool names, for callers that validate a reference to one
+ * without needing the definitions themselves. */
+export function agentToolNames(): ReadonlySet<string> {
+  return new Set(Object.keys(TOOLS_BY_NAME));
+}
+
+/**
+ * Lookup that reports absence instead of throwing, for callers that turn an
+ * unknown action into a handled error. {@link getTool} throws, which on the
+ * approval path would surface a crash where a 422 belongs.
+ */
+export function findTool(name: string): AgentTool | undefined {
+  return TOOLS_BY_NAME[name];
 }
 
 export function requiresApproval(name: string): boolean {
