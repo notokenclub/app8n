@@ -53,7 +53,7 @@ exactly where it stopped.
 want real Workspace access — you can skip it, see mock mode below.
 
 ```bash
-git clone https://github.com/notoken-club/app8n.git
+git clone https://github.com/notokenclub/app8n.git
 cd app8n
 npm install
 
