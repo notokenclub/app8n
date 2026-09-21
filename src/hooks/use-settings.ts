@@ -79,8 +79,10 @@ export function useCheckAccount() {
 }
 
 export interface ModelKeyStatus {
-  provider: "anthropic" | "google";
+  provider: "anthropic" | "google" | "openai" | "ollama";
   providerLabel: string;
+  requiresKey: boolean;
+  baseUrl?: string;
   source: "vault" | "env" | "none";
   hint: string | null;
   updatedAt: string | null;
@@ -118,5 +120,25 @@ export function useClearModelKey() {
         { method: "DELETE" },
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: MODEL_KEY }),
+  });
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Checks a keyless provider actually answers.
+ *
+ * A local runtime has no key to validate on save, so without this its first
+ * sign of trouble would be a failed run rather than a failed setup.
+ */
+export function useTestProvider() {
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<ConnectionTestResult>("/api/settings/model-key", {
+        method: "POST",
+      }),
   });
 }

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { credentialVault } from "@/lib/db/schema";
 import { credentialAad, decryptSecret, encryptSecret } from "@/lib/crypto/vault";
 import {
+  baseUrlFor,
   configuredProvider,
   FALLBACK_PROVIDER,
   MODEL_PROVIDERS,
@@ -16,6 +17,10 @@ export type ApiKeySource = "vault" | "env" | "none";
 export interface ApiKeyStatus {
   provider: ModelProvider;
   providerLabel: string;
+  /** False for a local provider, where the UI hides the key field entirely. */
+  requiresKey: boolean;
+  /** Where a self-hosted provider is reached. Absent for hosted ones. */
+  baseUrl?: string;
   source: ApiKeySource;
   /** Last four characters only — enough to recognise, useless if leaked. */
   hint: string | null;
@@ -94,11 +99,31 @@ export async function activeProvider(
   if (explicit) return PROVIDERS[explicit];
 
   for (const id of MODEL_PROVIDERS) {
-    const { key } = await resolveKeyFor(userId, PROVIDERS[id]);
-    if (key) return PROVIDERS[id];
+    if (await providerConfigured(userId, PROVIDERS[id])) return PROVIDERS[id];
   }
 
   return PROVIDERS[FALLBACK_PROVIDER];
+}
+
+/**
+ * Whether a provider is usable without further setup.
+ *
+ * A keyless provider counts as configured only when its address is set
+ * explicitly. Probing the default localhost port instead would mean an
+ * unrelated Ollama install silently captured the agent from a hosted provider
+ * the user had deliberately chosen.
+ */
+export async function providerConfigured(
+  userId: string,
+  provider: ProviderDefinition,
+): Promise<boolean> {
+  if (!provider.requiresKey) {
+    return Boolean(
+      provider.baseUrlEnvVar && process.env[provider.baseUrlEnvVar]?.trim(),
+    );
+  }
+  const { key } = await resolveKeyFor(userId, provider);
+  return Boolean(key);
 }
 
 /** The resolved provider and its key, which is what a run needs. */
@@ -119,11 +144,19 @@ export async function getKeyStatus(userId: string): Promise<ApiKeyStatus> {
   const base = {
     provider: provider.id,
     providerLabel: provider.label,
+    requiresKey: provider.requiresKey,
+    baseUrl: baseUrlFor(provider),
     envVar: provider.envVar,
     placeholder: provider.placeholder,
     consoleUrl: provider.consoleUrl,
     freeTier: provider.freeTier,
   };
+
+  // A keyless provider has no vault row to report on — it is configured by
+  // being reachable, which only a live check can establish.
+  if (!provider.requiresKey) {
+    return { ...base, source: "none", hint: null, updatedAt: null };
+  }
 
   if (row) {
     const key = decryptRow(userId, provider.vaultKeyName, row.secret);

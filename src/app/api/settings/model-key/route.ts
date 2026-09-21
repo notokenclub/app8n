@@ -4,9 +4,10 @@ import {
   activeProvider,
   clearModelKey,
   getKeyStatus,
+  resolveKeyFor,
   setModelKey,
 } from "@/lib/agent/model-key";
-import { modelIdFor } from "@/lib/agent/providers";
+import { baseUrlFor, modelIdFor } from "@/lib/agent/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,11 @@ export async function PUT(request: Request) {
   const provider = await activeProvider(userId);
 
   if (body.test !== false) {
-    const result = await provider.testKey(key, modelIdFor(provider));
+    const result = await provider.testConnection({
+      apiKey: key,
+      modelId: modelIdFor(provider),
+      baseUrl: baseUrlFor(provider),
+    });
     if (!result.ok) {
       return NextResponse.json(
         { error: "key_rejected", message: result.error },
@@ -58,6 +63,29 @@ export async function PUT(request: Request) {
     saved: true,
     status: await getKeyStatus(userId),
   });
+}
+
+/**
+ * Live connection test for the active provider.
+ *
+ * Separate from PUT because a keyless provider has nothing to save: the check
+ * *is* the setup step, and it reports a running server with the wrong model
+ * pulled as clearly as an unreachable one.
+ */
+export async function POST() {
+  const userId = await getCurrentUserId();
+  const provider = await activeProvider(userId);
+  const { key } = await resolveKeyFor(userId, provider);
+
+  const result = await provider.testConnection({
+    apiKey: key ?? undefined,
+    modelId: modelIdFor(provider),
+    baseUrl: baseUrlFor(provider),
+  });
+
+  return NextResponse.json(
+    result.ok ? { ok: true } : { ok: false, error: result.error },
+  );
 }
 
 export async function DELETE() {

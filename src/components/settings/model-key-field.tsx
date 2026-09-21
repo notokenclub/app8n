@@ -8,9 +8,13 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  RefreshCw,
+  Server,
   Sparkles,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
+import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +22,7 @@ import {
   useClearModelKey,
   useModelKey,
   useSaveModelKey,
+  useTestProvider,
 } from "@/hooks/use-settings";
 
 /**
@@ -37,7 +42,12 @@ export function ModelKeyField() {
   const { data, isLoading } = useModelKey();
   const save = useSaveModelKey();
   const clear = useClearModelKey();
+  const test = useTestProvider();
   const [value, setValue] = React.useState("");
+  const [probe, setProbe] = React.useState<{
+    ok: boolean;
+    error?: string;
+  } | null>(null);
 
   if (isLoading || !data) return <Skeleton className="h-28 rounded-2xl" />;
 
@@ -68,6 +78,67 @@ export function ModelKeyField() {
         )}
       </div>
 
+      {/* A local runtime has no key to store, so the whole vault flow is
+          replaced by a reachability check against the address it serves on. */}
+      {!data.requiresKey ? (
+        <>
+          <p className="text-sm text-muted-foreground">
+            Runs on your own machine — no API key, no account, nothing leaves
+            this computer. app8n talks to it at{" "}
+            <code className="font-mono text-xs">{data.baseUrl}</code>.
+          </p>
+
+          {probe && (
+            <div
+              className={cn(
+                "flex items-start gap-2 rounded-xl border px-3 py-2.5 text-xs leading-relaxed",
+                probe.ok
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                  : "border-destructive/30 bg-destructive/10 text-destructive",
+              )}
+            >
+              {probe.ok ? (
+                <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+              ) : (
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+              )}
+              <span className="min-w-0 flex-1">
+                {probe.ok
+                  ? "Ollama answered and the model is installed."
+                  : probe.error}
+              </span>
+            </div>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={test.isPending}
+            onClick={() =>
+              test.mutate(undefined, {
+                onSuccess: (result) => setProbe(result),
+                onError: (error) =>
+                  setProbe({
+                    ok: false,
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "Could not reach the provider.",
+                  }),
+              })
+            }
+          >
+            {test.isPending ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RefreshCw />
+            )}
+            Test connection
+          </Button>
+        </>
+      ) : (
+        <>
       {data.source === "vault" && (
         <div className="flex items-center gap-2 text-sm">
           <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
@@ -138,11 +209,19 @@ export function ModelKeyField() {
         </Button>
       </div>
 
+        </>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-start gap-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground">
-          <Lock className="mt-0.5 size-3 shrink-0" />
-          Encrypted with AES-256-GCM in the local vault and tested against{" "}
-          {data.providerLabel} before it is saved.
+          {data.requiresKey ? (
+            <Lock className="mt-0.5 size-3 shrink-0" />
+          ) : (
+            <Server className="mt-0.5 size-3 shrink-0" />
+          )}
+          {data.requiresKey
+            ? `Encrypted with AES-256-GCM in the local vault and tested against ${data.providerLabel} before it is saved.`
+            : "Nothing is sent off this machine — the model runs locally."}
         </p>
         <a
           href={data.consoleUrl}
@@ -150,7 +229,7 @@ export function ModelKeyField() {
           rel="noreferrer"
           className="inline-flex shrink-0 items-center gap-1 text-[0.6875rem] text-muted-foreground underline underline-offset-2 hover:text-foreground"
         >
-          Get a key
+          {data.requiresKey ? "Get a key" : "Install Ollama"}
           <ExternalLink className="size-2.5" />
         </a>
       </div>

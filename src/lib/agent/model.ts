@@ -1,6 +1,11 @@
 import type { LanguageModel } from "ai";
 import { resolveModelKey } from "./model-key";
-import { modelIdFor } from "./providers";
+import {
+  baseUrlFor,
+  modelIdFor,
+  MODEL_PROVIDERS,
+  PROVIDERS,
+} from "./providers";
 
 export class AgentNotConfiguredError extends Error {
   constructor(envVar = "an API key") {
@@ -13,8 +18,8 @@ export class AgentNotConfiguredError extends Error {
 
 /** True when either the vault or the environment can supply a key. */
 export async function isAgentConfiguredFor(userId: string): Promise<boolean> {
-  const { key } = await resolveModelKey(userId);
-  return Boolean(key);
+  const { provider, key } = await resolveModelKey(userId);
+  return provider.requiresKey ? Boolean(key) : true;
 }
 
 /**
@@ -22,9 +27,12 @@ export async function isAgentConfiguredFor(userId: string): Promise<boolean> {
  * can only report whether *some* provider key is present in the environment.
  */
 export function isAgentConfiguredInEnv(): boolean {
-  return Boolean(
-    process.env.ANTHROPIC_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-  );
+  return MODEL_PROVIDERS.some((id) => {
+    const provider = PROVIDERS[id];
+    // A keyless provider is configured by being reachable, which this
+    // boot-time check cannot determine without a network call.
+    return provider.envVar ? Boolean(process.env[provider.envVar]) : false;
+  });
 }
 
 /**
@@ -39,8 +47,14 @@ export async function agentModelFor(
   modelId?: string,
 ): Promise<LanguageModel> {
   const { provider, key } = await resolveModelKey(userId);
-  if (!key) throw new AgentNotConfiguredError(provider.envVar);
-  return provider.createModel(key, modelId ?? modelIdFor(provider));
+  if (provider.requiresKey && !key) {
+    throw new AgentNotConfiguredError(provider.envVar);
+  }
+  return provider.createModel({
+    apiKey: key ?? undefined,
+    modelId: modelId ?? modelIdFor(provider),
+    baseUrl: baseUrlFor(provider),
+  });
 }
 
 /** The message shown when a run cannot start, naming the right variable. */

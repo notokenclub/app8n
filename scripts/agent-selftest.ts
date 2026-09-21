@@ -3,6 +3,8 @@
 import "./selftest-env";
 
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -1023,20 +1025,168 @@ check("every provider is fully described for the settings UI", async () => {
     for (const field of [
       "label",
       "defaultModel",
-      "envVar",
       "vaultKeyName",
-      "placeholder",
       "consoleUrl",
     ] as const) {
       assert.ok(provider[field], `${id} is missing ${field}`);
     }
+
+    if (provider.requiresKey) {
+      assert.ok(provider.envVar, `${id} needs a key but names no env var`);
+      assert.ok(provider.placeholder, `${id} needs a key but has no placeholder`);
+    } else {
+      // Keyless providers are reached at an address instead.
+      assert.ok(provider.baseUrlEnvVar, `${id} is keyless but has no base URL var`);
+      assert.ok(provider.defaultBaseUrl, `${id} is keyless but has no default URL`);
+    }
     assert.equal(typeof provider.createModel, "function");
-    assert.equal(typeof provider.testKey, "function");
+    assert.equal(typeof provider.testConnection, "function");
   }
 
   // Two providers sharing a vault name would overwrite each other's keys.
   const names = MODEL_PROVIDERS.map((id) => PROVIDERS[id].vaultKeyName);
   assert.equal(new Set(names).size, names.length, "vault names must be unique");
+});
+
+check("a keyless provider is configured by its address, not a key", async () => {
+  // Ollama has no secret to hold, so "no key" must not mean "unusable" — and
+  // an unrelated local install must not capture the agent from a hosted
+  // provider the user deliberately chose, so the address has to be explicit.
+  const { providerConfigured, activeProvider } = await import(
+    "../src/lib/agent/model-key"
+  );
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+      OPENAI_API_KEY: undefined,
+      OLLAMA_BASE_URL: undefined,
+    },
+    async () => {
+      assert.equal(
+        await providerConfigured(userId, PROVIDERS.ollama),
+        false,
+        "an unset address must not count as configured",
+      );
+
+      process.env.OLLAMA_BASE_URL = "http://localhost:11434";
+      assert.equal(await providerConfigured(userId, PROVIDERS.ollama), true);
+      assert.equal((await activeProvider(userId)).id, "ollama");
+    },
+  );
+});
+
+check("a hosted key outranks a local runtime in auto-detection", async () => {
+  const { activeProvider, setModelKey, clearModelKey } = await import(
+    "../src/lib/agent/model-key"
+  );
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+      OPENAI_API_KEY: undefined,
+      OLLAMA_BASE_URL: "http://localhost:11434",
+    },
+    async () => {
+      await setModelKey(userId, PROVIDERS.google, "AIzaHostedWins");
+      assert.equal((await activeProvider(userId)).id, "google");
+      await clearModelKey(userId, PROVIDERS.google);
+    },
+  );
+});
+
+check("a keyless provider counts as configured for a run", async () => {
+  // isAgentConfiguredFor gates /api/chat. Keying it on a stored secret would
+  // 503 every Ollama user forever.
+  const { isAgentConfiguredFor } = await import("../src/lib/agent/model");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: "ollama",
+      OLLAMA_BASE_URL: "http://localhost:11434",
+    },
+    async () => {
+      assert.equal(await isAgentConfiguredFor(userId), true);
+    },
+  );
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: "openai",
+      OPENAI_API_KEY: undefined,
+    },
+    async () => {
+      // A key-requiring provider with no key is still not configured.
+      assert.equal(await isAgentConfiguredFor(userId), false);
+    },
+  );
+});
+
+check("ollama's base URL is read from the environment", async () => {
+  const { baseUrlFor, PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv({ OLLAMA_BASE_URL: undefined }, async () => {
+    assert.equal(baseUrlFor(PROVIDERS.ollama), "http://localhost:11434");
+  });
+  await withEnv({ OLLAMA_BASE_URL: "http://192.168.1.50:11434" }, async () => {
+    assert.equal(baseUrlFor(PROVIDERS.ollama), "http://192.168.1.50:11434");
+  });
+  // Hosted providers have no address to configure.
+  assert.equal(baseUrlFor(PROVIDERS.anthropic), undefined);
+});
+
+check("ollama reports a missing model rather than a bare failure", async () => {
+  // A running server with nothing pulled is the most likely setup mistake,
+  // and "connection ok" there would send the user hunting in the wrong place.
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  const server = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ models: [{ name: "llama3.1:latest" }] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const missing = await PROVIDERS.ollama.testConnection({
+      modelId: "qwen2.5",
+      baseUrl,
+    });
+    assert.equal(missing.ok, false);
+    assert.match(
+      missing.ok ? "" : missing.error,
+      /ollama pull qwen2\.5/,
+      "the fix must be in the message",
+    );
+
+    // A bare name matches the ":latest" tag Ollama reports for it.
+    const present = await PROVIDERS.ollama.testConnection({
+      modelId: "llama3.1",
+      baseUrl,
+    });
+    assert.equal(present.ok, true);
+  } finally {
+    server.close();
+  }
+});
+
+check("an unreachable ollama is reported as unreachable", async () => {
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  // Port 1 is reserved and nothing listens on it.
+  const result = await PROVIDERS.ollama.testConnection({
+    modelId: "qwen2.5",
+    baseUrl: "http://127.0.0.1:1",
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.ok ? "" : result.error, /Could not reach Ollama/);
 });
 
 async function main() {

@@ -4,7 +4,7 @@ Everything needed to pick this project up cold — what exists, why it was built
 and where the seams are. If you're new, read this after the README.
 
 Current state: **Phases 1–6 complete.** Typecheck and lint clean, 8/8 vault checks,
-26/26 Google checks, 34/34 agent checks, production build succeeds with 18 routes.
+26/26 Google checks, 40/40 agent checks, production build succeeds with 18 routes.
 
 ---
 
@@ -42,7 +42,7 @@ an implementation detail.
 | Framework | Next.js **16.3.4** App Router + Turbopack |
 | UI | React **19.2.8**, Tailwind v4, shadcn on `@base-ui/react`, `lucide-react`, `sonner` |
 | Data | Drizzle ORM + `better-sqlite3` (Postgres-swappable via `DATABASE_URL`) |
-| Agent | Vercel AI SDK v7 + `@ai-sdk/anthropic` / `@ai-sdk/google` |
+| Agent | Vercel AI SDK v7 — Anthropic, Gemini, OpenAI, or local Ollama |
 | Google | `googleapis` v178, native OAuth 2.0 |
 | Canvas | `@xyflow/react` v12 (read-only) |
 | Scheduling | `croner` |
@@ -267,7 +267,7 @@ npm run typecheck
 npm run lint
 npm run vault:selftest      # 8 checks
 npm run google:selftest     # 26 checks
-npm run agent:selftest      # 34 checks
+npm run agent:selftest      # 40 checks
 
 npm run db:generate | db:migrate | db:push | db:studio
 npm run vault:keygen        # mint APP8N_ENCRYPTION_KEY
@@ -295,8 +295,9 @@ Full annotated list lives in `.env.example`. The ones that trip people up:
 | `NEXT_PUBLIC_APP8N_API_URL` | Backend the client calls. Leave blank for same-origin web; set it for the native shell. |
 | `APP8N_MOBILE_REDIRECT_URI` | `app8n://auth/callback`. Must match the URL scheme registered in the iOS and Android projects or OAuth will complete and then strand the user. |
 | `DATABASE_URL` | `file:./data/app8n.db` locally; point at Postgres/Supabase for server mode. |
-| `APP8N_MODEL_PROVIDER` | `anthropic` or `google`. Optional — with one key set the provider is inferred, so this is only needed to force a choice when both are present. |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini key. Google's free tier makes this the no-cost way to run the agent. |
+| `APP8N_MODEL_PROVIDER` | `anthropic`, `google`, `openai` or `ollama`. Optional — the provider is inferred from whichever is configured, so this only forces a choice when several are. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini key. Google's free tier makes this the no-cost hosted option. |
+| `OLLAMA_BASE_URL` | Selects Ollama. Unset means off, even if Ollama is running — see below. |
 | `APP8N_MODEL_ID` | Overrides the provider's default model. |
 | `APP8N_FCM_SERVICE_ACCOUNT` | Firebase service account (inline JSON or a path) for approval push. Unset means push is skipped, never failed — the Approvals tab stays the channel of record. |
 
@@ -387,15 +388,34 @@ what `.env.example` used to promise: it listed `OPENAI_API_KEY` and `OLLAMA_BASE
 as "optional alternatives" while nothing in the codebase read either one. Dead config
 is the same failure as a dead column, and it cost a user real time.
 
-Each provider owns its own vault row name, so keys for both can coexist and one can
-never satisfy the other. `anthropic`'s name is unchanged from when it was the only
-provider, so existing vault entries survive the change.
+Each provider owns its own vault row name, so keys can coexist and one can never satisfy
+another. `anthropic`'s name is unchanged from when it was the only provider, so existing
+vault entries survive the change.
 
-**Dependency note:** `ai`, `@ai-sdk/anthropic`, `@ai-sdk/google` and `@ai-sdk/react` all
-pin `@ai-sdk/provider` exactly. If they disagree, npm nests copies and `LanguageModel`
-becomes structurally incompatible between them — a confusing wall of type errors. Keep
-the four on versions that resolve to a single hoisted `@ai-sdk/provider`; the check is
-`ls node_modules/@ai-sdk/*/node_modules`, which should be empty.
+**Ollama is keyless, which the model had to learn.** Reachability is its credential, so
+`requiresKey: false` makes a missing key stop meaning "unconfigured" — otherwise
+`isAgentConfiguredFor` would 503 every local user forever. It is selected by setting
+`OLLAMA_BASE_URL` rather than by probing localhost: an unrelated Ollama install must not
+quietly capture the agent from a hosted provider someone deliberately chose. For the same
+reason hosted providers sit before it in `MODEL_PROVIDERS`, which is the auto-detection
+order.
+
+Its connection test checks the server is up **and** that the model is pulled, reporting
+`ollama pull <model>` and what is installed. A running server with nothing pulled is the
+likeliest setup mistake, and passing it as "connected" would send people hunting in the
+wrong place.
+
+**Dependency note:** every `@ai-sdk/*` package pins `@ai-sdk/provider` exactly. If they
+disagree, npm nests copies and `LanguageModel` becomes structurally incompatible between
+them — a confusing wall of type errors that looks like a code bug. Keep them all on
+versions resolving to a single hoisted `@ai-sdk/provider`. The check:
+
+```bash
+find node_modules/@ai-sdk/*/node_modules -name package.json 2>/dev/null   # must be empty
+```
+
+(Check for files, not directories — npm leaves empty folders behind and they look like
+a violation when there is none.)
 
 ### Resuming a parked run
 
@@ -465,9 +485,11 @@ self-test caught this.
    validates it through the same `saveWorkflow` the agent uses — so this is a UI job, not a
    backend one. No client hook is shipped for it deliberately: an unused one would be the
    dead code this codebase keeps warning about.
-5. **More providers.** `providers.ts` takes a new entry plus its package; Ollama is the
-   obvious next one for a fully offline agent, with the caveat that small local models
-   are unreliable at chaining this many tools.
+5. **Local-model reliability.** Ollama works, but app8n's surface is 22 tools and a
+   multi-step approval gate, which small local models chain far less reliably than the
+   hosted ones. `qwen2.5` is the default because it is the better tool caller, not the
+   better writer. Worth measuring properly and documenting which local models actually
+   hold up.
 6. **Approval expiry is done.** `expireStaleApprovals` sweeps on every worker tick and on
    every `GET /api/approvals`, and `resolveApproval` re-checks inline, so an expired gate
    cannot execute even if the sweep never ran. The Phase 5 note listing this as missing was

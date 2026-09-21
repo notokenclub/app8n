@@ -29,6 +29,8 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.58",
     "@ai-sdk/google": "^4.0.76",
+    "@ai-sdk/openai": "^4.0.71",
+    "@ai-sdk/openai-compatible": "^3.0.53",
     "@ai-sdk/react": "^4.0.110",
     "@base-ui/react": "^1.8.0",
     "@capacitor/android": "^8.5.1",
