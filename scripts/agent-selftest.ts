@@ -1189,6 +1189,52 @@ check("an unreachable ollama is reported as unreachable", async () => {
   assert.match(result.ok ? "" : result.error, /Could not reach Ollama/);
 });
 
+// --- OAuth round trip -------------------------------------------------------
+
+check("the OAuth callback redirects somewhere that exists", async () => {
+  // The default was `/connections`, a route this app has never had: a user who
+  // reached consent without a returnTo landed on a 404 holding a freshly
+  // linked account. A redirect target nothing serves is the same class of bug
+  // as a column nothing reads.
+  const { readFileSync, existsSync } = await import("node:fs");
+
+  const source = readFileSync(
+    "src/app/api/auth/google/callback/route.ts",
+    "utf8",
+  );
+  const fallback = /returnTo \?\? "([^"]+)"/.exec(source)?.[1];
+  assert.ok(fallback, "the callback must name a fallback redirect");
+
+  const page = `src/app${fallback === "/" ? "" : fallback}/page.tsx`;
+  assert.ok(
+    existsSync(page),
+    `callback redirects to ${fallback}, but ${page} does not exist`,
+  );
+});
+
+check("OAuth state round-trips and rejects tampering", async () => {
+  // The state carries the PKCE verifier, so forging one would mean completing
+  // someone else's consent flow.
+  const { createOAuthState, consumeOAuthState, GoogleOAuthError } =
+    await import("../src/lib/google/oauth");
+
+  const state = createOAuthState({
+    verifier: "test-verifier",
+    userId,
+    client: "web",
+    returnTo: "/settings",
+  });
+
+  const payload = consumeOAuthState(state);
+  assert.equal(payload.verifier, "test-verifier");
+  assert.equal(payload.userId, userId);
+  assert.equal(payload.returnTo, "/settings");
+
+  // Flipping one character of the envelope must fail the auth tag.
+  const tampered = state.slice(0, -2) + (state.endsWith("A") ? "B" : "A");
+  assert.throws(() => consumeOAuthState(tampered), GoogleOAuthError);
+});
+
 async function main() {
   migrate(db, { migrationsFolder: "drizzle" });
 

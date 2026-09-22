@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { Moon, Sun } from "lucide-react";
 import { ModelKeyField } from "@/components/settings/model-key-field";
 import { GoogleAccounts } from "@/components/settings/google-accounts";
+import { GoogleConnectResult } from "@/components/settings/google-connect-result";
 import { PushNotifications } from "@/components/settings/push-notifications";
 import { PageHeader } from "@/components/shell/page-header";
 import { Switch } from "@/components/ui/switch";
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" subtitle="Accounts, keys and the vault" />
+      <GoogleConnectResult />
 
       <div className="mx-auto w-full max-w-2xl flex-1 space-y-7 p-4">
         <Section
