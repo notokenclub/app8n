@@ -1,11 +1,10 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Moon, Sun } from "lucide-react";
+import { Divider, Icon, Switch } from "@/ds";
 import { AnthropicKeyField } from "@/components/settings/anthropic-key-field";
 import { GoogleAccounts } from "@/components/settings/google-accounts";
 import { PageHeader } from "@/components/shell/page-header";
-import { Switch } from "@/components/ui/switch";
 
 function Section({
   title,
@@ -17,10 +16,10 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-2.5">
+    <section className="space-y-space-sm">
       <div>
-        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        <h2 className="font-display text-title-sm text-ink">{title}</h2>
+        <p className="text-caption text-muted">{description}</p>
       </div>
       {children}
     </section>
@@ -29,19 +28,21 @@ function Section({
 
 export default function SettingsPage() {
   const { resolvedTheme, setTheme } = useTheme();
-  const dark = resolvedTheme !== "light";
+  const charcoal = resolvedTheme === "dark";
 
   return (
     <>
       <PageHeader title="Settings" subtitle="Accounts, keys and the vault" />
 
-      <div className="mx-auto w-full max-w-2xl flex-1 space-y-7 p-4">
+      <div className="mx-auto w-full max-w-2xl flex-1 space-y-space-xl p-space-md">
         <Section
           title="Google Workspace"
           description="Which accounts app8n can act on, and what it is allowed to touch."
         >
           <GoogleAccounts />
         </Section>
+
+        <Divider tone="hairline" />
 
         <Section
           title="Anthropic API key"
@@ -50,29 +51,27 @@ export default function SettingsPage() {
           <AnthropicKeyField />
         </Section>
 
+        <Divider tone="hairline" />
+
         <Section
           title="Appearance"
-          description="app8n is built dark-first; light mode is there if you need it."
+          description="The canvas theme is the default; the charcoal theme inverts it onto the system's dark ink surfaces."
         >
-          <label className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3.5">
-            {dark ? (
-              <Moon className="size-4 shrink-0 text-muted-foreground" />
-            ) : (
-              <Sun className="size-4 shrink-0 text-muted-foreground" />
-            )}
-            <span className="min-w-0 flex-1 text-sm font-medium">
-              Dark mode
+          <div className="flex items-center gap-space-sm rounded-md border border-hairline bg-canvas p-space-sm">
+            <span className="shrink-0 text-muted">
+              <Icon name={charcoal ? "EyeOpenStrikethrough" : "EyeOpen"} size={16} />
+            </span>
+            <span className="min-w-0 flex-1 text-body-md font-medium">
+              Charcoal theme
             </span>
             <Switch
-              checked={dark}
-              onCheckedChange={(checked) =>
-                setTheme(checked ? "dark" : "light")
-              }
+              checked={charcoal}
+              onChange={(checked) => setTheme(checked ? "dark" : "light")}
             />
-          </label>
+          </div>
         </Section>
 
-        <p className="pb-4 text-[0.6875rem] leading-relaxed text-muted-foreground">
+        <p className="pb-space-md text-legal leading-relaxed text-muted">
           Every credential above lives in an AES-256-GCM encrypted vault on this
           machine. The model is shown the results of actions, never the tokens
           that made them possible.

@@ -2,14 +2,28 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* The Zelleo design system's token sheets — fonts, colours, typography,
+   spacing, radii, shadows — the same set `src/ds/styles.css` names. Every
+   value below is expressed through them; no raw hex, px or font name is
+   allowed anywhere in the app. They are listed individually rather than
+   through that file so the bundler inlines them ahead of Tailwind's own
+   rules, which is where CSS requires @import to sit. */
+@import "../ds/tokens/fonts.css";
+@import "../ds/tokens/colors.css";
+@import "../ds/tokens/typography.css";
+@import "../ds/tokens/spacing.css";
+@import "../ds/tokens/radii.css";
+@import "../ds/tokens/shadows.css";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+  --font-heading: var(--font-display);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -18,11 +32,6 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -30,91 +39,145 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
+  /* `--color-muted` is the design system's muted *ink*; surfaces use
+     `--color-secondary` so the two meanings never collide. */
+  --color-muted: var(--ink-500);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
+  --color-primary: var(--flame-500);
+  /* The design system's own colour names, exposed as utilities. Each points
+     at the same ramp value its token in `tokens/colors.css` does, so
+     `text-ink`, `bg-surface-soft` and `var(--color-ink)` never disagree. */
+  --color-primary-subtle: var(--flame-50);
+  --color-primary-active: var(--flame-600);
+  --color-ink: var(--ink-900);
+  --color-body: var(--ink-700);
+  --color-canvas: var(--warm-white);
+  --color-hairline: var(--sand-400);
+  --color-border-strong: var(--sand-500);
+  --color-surface-soft: var(--sand-100);
+  --color-surface-strong: var(--sand-300);
+  --color-surface-dark: var(--ink-900);
+  --color-surface-dark-elevated: var(--ink-800);
+  --color-signature-ember: var(--flame-600);
+  --color-signature-charcoal: var(--ink-900);
+  --color-signature-sand: var(--sand-200);
+  --color-on-primary: var(--warm-white);
+  --color-on-dark: var(--warm-white);
+  --color-link: var(--flame-500);
+  --color-success: var(--success);
+  --color-danger: var(--flame-700);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Spacing scale — the design system's eight steps, nothing in between.
+     Namespaced `space-*` (`p-space-md`, `gap-space-xs`) so the step names do
+     not collide with Tailwind's own `md`/`lg` container widths. */
+  --spacing-space-xxs: var(--space-xxs);
+  --spacing-space-xs: var(--space-xs);
+  --spacing-space-sm: var(--space-sm);
+  --spacing-space-md: var(--space-md);
+  --spacing-space-lg: var(--space-lg);
+  --spacing-space-xl: var(--space-xl);
+  --spacing-space-xxl: var(--space-xxl);
+  --spacing-space-section: var(--space-section);
+
+  /* Radius hierarchy — 2px legal, 6px inputs, 10px cards, 12px buttons. */
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-pill: var(--radius-pill);
+  --radius-full: var(--radius-full);
+
+  /* Typography scale, exposed as `text-title-md`, `text-body-md`, … */
+  --text-display-xl: var(--text-display-xl-size);
+  --text-display-xl--line-height: var(--text-display-xl-lh);
+  --text-display-lg: var(--text-display-lg-size);
+  --text-display-lg--line-height: var(--text-display-lg-lh);
+  --text-display-md: var(--text-display-md-size);
+  --text-display-md--line-height: var(--text-display-md-lh);
+  --text-title-lg: var(--text-title-lg-size);
+  --text-title-lg--line-height: var(--text-title-lg-lh);
+  --text-title-md: var(--text-title-md-size);
+  --text-title-md--line-height: var(--text-title-md-lh);
+  --text-title-sm: var(--text-title-sm-size);
+  --text-title-sm--line-height: var(--text-title-sm-lh);
+  --text-label-md: var(--text-label-md-size);
+  --text-label-md--line-height: var(--text-label-md-lh);
+  --text-button: var(--text-button-size);
+  --text-button--line-height: var(--text-button-lh);
+  --text-body-md: var(--text-body-md-size);
+  --text-body-md--line-height: var(--text-body-md-lh);
+  --text-caption: var(--text-caption-size);
+  --text-caption--line-height: var(--text-caption-lh);
+  --text-legal: var(--text-legal-size);
+  --text-legal--line-height: var(--text-legal-lh);
+  --text-mono: var(--text-mono-size);
+  --text-mono--line-height: var(--text-mono-lh);
 }
 
+/* Canvas theme — warm white, flame primary. This is the system's default and
+   the surface every component in `src/ds` is drawn for. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --background: var(--color-canvas);
+  --foreground: var(--color-ink);
+  --card: var(--color-canvas);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-canvas);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-on-primary);
+  --secondary: var(--color-surface-soft);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-surface-soft);
+  --muted-foreground: var(--color-muted);
+  --accent: var(--color-primary-subtle);
+  --accent-foreground: var(--color-primary);
+  --destructive: var(--color-danger);
+  --border: var(--color-hairline);
+  --input: var(--color-hairline);
+  --ring: var(--color-primary);
+  --radius: var(--radius-md);
+  --sidebar: var(--color-surface-dark);
+  --sidebar-foreground: var(--color-on-dark);
+  --sidebar-primary: var(--color-primary);
+  --sidebar-primary-foreground: var(--color-on-primary);
+  --sidebar-accent: var(--color-surface-dark-elevated);
+  --sidebar-accent-foreground: var(--color-on-dark);
+  --sidebar-border: var(--ink-800);
+  --sidebar-ring: var(--color-primary);
 }
 
+/* Charcoal theme — the same two-tone system inverted onto the design system's
+   dark ink surfaces. No new colours: ink for surfaces, flame for accent. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: var(--color-surface-dark);
+  --foreground: var(--color-on-dark);
+  --card: var(--color-surface-dark-elevated);
+  --card-foreground: var(--color-on-dark);
+  --popover: var(--color-surface-dark-elevated);
+  --popover-foreground: var(--color-on-dark);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-on-primary);
+  --secondary: var(--ink-800);
+  --secondary-foreground: var(--color-on-dark);
+  --muted: var(--ink-800);
+  --muted-foreground: var(--sand-500);
+  --accent: var(--ink-700);
+  --accent-foreground: var(--color-on-dark);
+  --destructive: var(--flame-300);
+  --border: var(--ink-700);
+  --input: var(--ink-700);
+  --ring: var(--color-primary);
+  --sidebar: var(--color-surface-dark);
+  --sidebar-foreground: var(--color-on-dark);
+  --sidebar-accent: var(--color-surface-dark-elevated);
+  --sidebar-accent-foreground: var(--color-on-dark);
+  --sidebar-border: var(--ink-800);
 }
 
 @theme inline {
@@ -135,21 +198,42 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: var(--text-body-md-size);
+    line-height: var(--text-body-md-lh);
     /* Stop the page itself rubber-banding in a Capacitor webview; individual
        scroll regions opt back in. Without this the shell drags away from the
        status bar on overscroll and the app stops feeling native. */
     overscroll-behavior-y: none;
   }
   html {
-    @apply font-sans;
+    font-family: var(--font-sans);
     /* iOS zooms the viewport when a sub-16px input is focused and does not
        always zoom back out; this prevents the adjustment entirely. */
     -webkit-text-size-adjust: 100%;
+  }
+  /* Headlines are condensed and never heavier than 600 — size and colour
+     carry emphasis in this system, not weight. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: var(--text-title-lg-weight);
+  }
+  code,
+  pre,
+  kbd {
+    font-family: var(--font-mono);
   }
   button,
   a,
   [role="button"] {
     -webkit-tap-highlight-color: transparent;
+  }
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus-ring);
   }
 }
 

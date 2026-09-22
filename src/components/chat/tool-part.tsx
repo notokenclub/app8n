@@ -1,15 +1,8 @@
 "use client";
 
 import * as React from "react";
-import {
-  AlertCircle,
-  Ban,
-  ChevronDown,
-  ExternalLink,
-  Loader2,
-  ShieldAlert,
-} from "lucide-react";
 import { cn } from "cn";
+import { Badge, Divider, Icon, LogConsole } from "@/ds";
 import { toolDisplay } from "@/lib/tool-display";
 import { summariseResult } from "@/lib/tool-result";
 
@@ -45,60 +38,30 @@ function inputHint(input: unknown): string | undefined {
   return undefined;
 }
 
-function Pill({
-  tone,
-  icon,
-  label,
-  hint,
-}: {
-  tone: "running" | "done" | "error" | "waiting";
-  icon: React.ReactNode;
-  label: string;
-  hint?: string;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
-        tone === "running" && "border-primary/30 bg-primary/10 text-primary",
-        tone === "done" && "border-border bg-muted/60 text-muted-foreground",
-        tone === "error" &&
-          "border-destructive/30 bg-destructive/10 text-destructive",
-        tone === "waiting" &&
-          "border-amber-500/30 bg-amber-500/10 text-amber-300",
-      )}
-    >
-      {icon}
-      <span className="shrink-0">{label}</span>
-      {hint && (
-        <span className="min-w-0 truncate font-normal opacity-70">{hint}</span>
-      )}
-    </span>
-  );
-}
-
 /**
- * One tool call in the transcript.
+ * One tool call in the transcript, as a design-system badge.
  *
- * In flight it is just a pill — the point is to show the agent is working
+ * In flight it is just a badge — the point is to show the agent is working
  * without shoving the conversation off screen on a phone. Once output lands
- * the pill grows a preview of what came back, collapsed by default so a
+ * the badge grows a preview of what came back, collapsed by default so a
  * fifty-message search does not bury the agent's actual answer.
  */
 export function ToolPart({ part }: { part: ToolPartView }) {
   const display = toolDisplay(part.toolName);
-  const Icon = display.icon;
   const [open, setOpen] = React.useState(false);
   const hint = inputHint(part.input);
 
   if (part.state === "input-streaming" || part.state === "input-available") {
     return (
-      <Pill
-        tone="running"
-        icon={<Loader2 className="size-3 animate-spin" />}
-        label={`${display.active}…`}
-        hint={hint}
-      />
+      <span className="inline-flex max-w-full items-center gap-space-xs">
+        <Badge tone="primary">
+          <span className="inline-flex items-center gap-space-xxs">
+            <Icon name="Clock" size={16} />
+            {display.active}
+          </span>
+        </Badge>
+        {hint && <span className="truncate text-caption text-muted">{hint}</span>}
+      </span>
     );
   }
 
@@ -107,15 +70,15 @@ export function ToolPart({ part }: { part: ToolPartView }) {
     part.state === "approval-responded"
   ) {
     // The actionable card is rendered from the persisted `data-approval` part,
-    // which carries the database id needed by /api/approvals/[id]. This pill
+    // which carries the database id needed by /api/approvals/[id]. This badge
     // only marks the place in the transcript where the run stopped.
     return (
-      <Pill
-        tone="waiting"
-        icon={<ShieldAlert className="size-3" />}
-        label="Waiting for your approval"
-        hint={hint}
-      />
+      <Badge tone="primary">
+        <span className="inline-flex items-center gap-space-xxs">
+          <Icon name="LockLocked" size={16} />
+          Waiting for your approval
+        </span>
+      </Badge>
     );
   }
 
@@ -124,26 +87,28 @@ export function ToolPart({ part }: { part: ToolPartView }) {
     // record that the agent asked and was told no, or the conversation reads
     // as if the action simply never happened.
     return (
-      <Pill
-        tone="done"
-        icon={<Ban className="size-3" />}
-        label={`${display.done} — rejected`}
-        hint={hint}
-      />
+      <Badge tone="neutral">
+        <span className="inline-flex items-center gap-space-xxs">
+          <Icon name="Cross" size={16} />
+          {display.done} — rejected
+        </span>
+      </Badge>
     );
   }
 
   if (part.state === "output-error") {
     return (
-      <div className="space-y-1">
-        <Pill
-          tone="error"
-          icon={<AlertCircle className="size-3" />}
-          label={`${display.done} failed`}
-          hint={hint}
-        />
+      <div className="space-y-space-xxs">
+        <Badge tone="danger">
+          <span className="inline-flex items-center gap-space-xxs">
+            <Icon name="CrossCircle" size={16} />
+            {display.done} failed
+          </span>
+        </Badge>
         {part.errorText && (
-          <p className="pl-1 text-xs text-destructive/80">{part.errorText}</p>
+          <p className="pl-space-xxs text-caption text-destructive">
+            {part.errorText}
+          </p>
         )}
       </div>
     );
@@ -151,47 +116,51 @@ export function ToolPart({ part }: { part: ToolPartView }) {
 
   const summary = summariseResult(part.output);
   const expandable = summary.kind === "rows" || summary.kind === "raw";
+  const detail =
+    summary.count != null
+      ? `${summary.count} result${summary.count === 1 ? "" : "s"}`
+      : summary.kind === "empty"
+        ? "nothing found"
+        : (summary.note ?? hint);
 
   return (
-    <div className="min-w-0 space-y-1.5">
+    <div className="min-w-0 space-y-space-xs">
       <button
         type="button"
         disabled={!expandable}
         onClick={() => setOpen((prev) => !prev)}
-        className="max-w-full text-left disabled:cursor-default"
+        className="inline-flex max-w-full items-center gap-space-xs text-left disabled:cursor-default"
       >
-        <Pill
-          tone="done"
-          icon={<Icon className="size-3" />}
-          label={display.done}
-          hint={
-            summary.count != null
-              ? `${summary.count} result${summary.count === 1 ? "" : "s"}`
-              : summary.kind === "empty"
-                ? "nothing found"
-                : (summary.note ?? hint)
-          }
-        />
+        <Badge tone="neutral">
+          <span className="inline-flex items-center gap-space-xxs">
+            <Icon name={display.icon} size={16} />
+            {display.done}
+          </span>
+        </Badge>
+        {detail && <span className="truncate text-caption text-muted">{detail}</span>}
         {expandable && (
-          <ChevronDown
+          <span
             className={cn(
-              "ml-1 inline size-3 text-muted-foreground transition-transform",
+              "inline-flex text-muted transition-transform",
               open && "rotate-180",
             )}
-          />
+          >
+            <Icon name="ChevronDown" size={16} />
+          </span>
         )}
       </button>
 
       {open && summary.kind === "rows" && (
-        <ul className="space-y-1 rounded-xl border border-border bg-card/60 p-2">
-          {summary.rows.map((row) => (
-            <li key={row.key} className="min-w-0 px-1.5 py-1 text-xs">
-              <div className="flex items-baseline gap-2">
+        <ul className="rounded-md border border-border bg-background p-space-xs">
+          {summary.rows.map((row, index) => (
+            <li key={row.key} className="min-w-0 px-space-xxs py-space-xxs text-caption">
+              {index > 0 && <Divider tone="hairline" />}
+              <div className="flex items-baseline gap-space-xs pt-space-xxs">
                 <span className="min-w-0 flex-1 truncate font-medium text-foreground">
                   {row.title}
                 </span>
                 {row.meta && (
-                  <span className="shrink-0 text-[0.625rem] text-muted-foreground tabular-nums">
+                  <span className="shrink-0 text-legal text-muted tabular-nums">
                     {row.meta}
                   </span>
                 )}
@@ -200,29 +169,36 @@ export function ToolPart({ part }: { part: ToolPartView }) {
                     href={row.href}
                     target="_blank"
                     rel="noreferrer"
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label="Open in a new tab"
+                    className="shrink-0 text-muted hover:text-primary"
                   >
-                    <ExternalLink className="size-3" />
+                    <Icon name="LinkExternal" size={16} />
                   </a>
                 )}
               </div>
               {row.subtitle && (
-                <p className="truncate text-muted-foreground">{row.subtitle}</p>
+                <p className="truncate text-muted">{row.subtitle}</p>
               )}
             </li>
           ))}
           {summary.count != null && summary.count > summary.rows.length && (
-            <li className="px-1.5 text-[0.625rem] text-muted-foreground">
+            <li className="px-space-xxs text-legal text-muted">
               +{summary.count - summary.rows.length} more
             </li>
           )}
         </ul>
       )}
 
+      {/* Raw output is machine text, so it goes in the system's log console
+          rather than a styled <pre>. */}
       {open && summary.kind === "raw" && summary.raw && (
-        <pre className="scroll-region max-h-48 overflow-auto rounded-xl border border-border bg-card/60 p-2.5 font-mono text-[0.6875rem] leading-relaxed text-muted-foreground">
-          {summary.raw}
-        </pre>
+        <div className="scroll-region max-h-48 overflow-auto">
+          <LogConsole
+            lines={summary.raw
+              .split("\n")
+              .map((text) => ({ time: "", text, level: "info" as const }))}
+          />
+        </div>
       )}
     </div>
   );

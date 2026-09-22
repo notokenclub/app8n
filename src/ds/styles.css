@@ -1,0 +1,9 @@
+/* Zelleo design system — global token sheets.
+   Imported once from src/app/globals.css; nothing else in the app may
+   define a colour, spacing step, radius or font outside these files. */
+@import "./tokens/fonts.css";
+@import "./tokens/colors.css";
+@import "./tokens/typography.css";
+@import "./tokens/spacing.css";
+@import "./tokens/radii.css";
+@import "./tokens/shadows.css";

@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsRight, Loader2 } from "lucide-react";
 import { cn } from "cn";
+import { Icon } from "@/ds";
 
 /**
  * A drag-to-the-end control for the one irreversible button on the screen.
@@ -16,6 +16,9 @@ import { cn } from "cn";
  * pen and touch, and `setPointerCapture` keeps the drag alive when the finger
  * leaves the track. Keyboard users get the same action from Enter or Space on
  * the knob, so the gesture is never the only way through.
+ *
+ * Colour comes from the brand ramp, not a semantic status colour: nothing has
+ * succeeded yet while the knob is mid-track.
  */
 export function SwipeConfirm({
   label,
@@ -73,39 +76,39 @@ export function SwipeConfirm({
     <div
       ref={trackRef}
       className={cn(
-        "relative h-12 w-full touch-none overflow-hidden rounded-xl border border-emerald-500/30 bg-emerald-500/10 select-none",
+        "relative h-12 w-full touch-none overflow-hidden rounded-lg border border-hairline bg-primary-subtle select-none",
         locked && "opacity-60",
         className,
       )}
     >
       {/* Fill trails the knob so the control reads as "almost there" mid-drag. */}
       <div
-        className="absolute inset-y-0 left-0 bg-emerald-500/20"
+        className="absolute inset-y-0 left-0 bg-surface-strong"
         style={{
-          width: `${offset + 44}px`,
+          width: `calc(${offset}px + var(--space-xxl))`,
           transition: dragging ? "none" : "width 180ms ease-out",
         }}
       />
 
       <span
-        className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1.5 text-sm font-medium text-emerald-300"
+        className="pointer-events-none absolute inset-0 flex items-center justify-center gap-space-xs text-body-md font-medium text-ink"
         style={{ opacity: 1 - progress }}
       >
         {pending ? (
           <>
-            <Loader2 className="size-4 animate-spin" />
-            Approving…
+            <Icon name="Clock" size={16} />
+            Approving
           </>
         ) : (
           <>
             {label}
-            <ChevronsRight className="size-4 animate-pulse" />
+            <Icon name="ChevronDoubleRight" size={16} />
           </>
         )}
       </span>
 
       <span
-        className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm font-semibold text-emerald-200"
+        className="pointer-events-none absolute inset-0 flex items-center justify-center text-body-md font-semibold text-primary"
         style={{ opacity: progress }}
       >
         {confirmedLabel}
@@ -115,7 +118,7 @@ export function SwipeConfirm({
         type="button"
         aria-label={label}
         disabled={locked}
-        className="absolute top-1 left-1 flex size-10 cursor-grab items-center justify-center rounded-lg bg-emerald-500 text-emerald-950 shadow-sm outline-none focus-visible:ring-3 focus-visible:ring-emerald-400/50 active:cursor-grabbing disabled:cursor-not-allowed"
+        className="absolute top-1 left-1 flex size-10 cursor-grab items-center justify-center rounded-md bg-primary text-on-primary outline-none active:cursor-grabbing disabled:cursor-not-allowed"
         style={{
           transform: `translateX(${offset}px)`,
           transition: dragging ? "none" : "transform 180ms ease-out",
@@ -148,11 +151,7 @@ export function SwipeConfirm({
           }
         }}
       >
-        {pending ? (
-          <Loader2 className="size-5 animate-spin" />
-        ) : (
-          <Check className="size-5" />
-        )}
+        <Icon name={pending ? "Clock" : "CheckMark"} size={16} />
       </button>
     </div>
   );

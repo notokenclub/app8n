@@ -1,25 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "@/components/shell/app-shell";
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
   title: "app8n — local-first agentic automation",
   description:
     "Chat-driven, zero-code automation for Google Workspace. Runs on your machine.",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
@@ -31,21 +20,34 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   // Pinch-zoom on a chat surface only ever fires by accident mid-scroll.
   userScalable: false,
-  colorScheme: "dark",
-  themeColor: "#0a0a0a",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      // `dark` is in the server-rendered markup so the very first paint is
-      // dark; next-themes swaps the class afterwards if the user picks light.
-      className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // The design system is canvas-first: warm white surface, flame accent.
+      // next-themes swaps in the charcoal theme afterwards if the user picks
+      // it. Fonts come from the system's own @font-face sheet, so no font
+      // loader variable is needed on <html>.
+      className="h-full antialiased"
       // next-themes writes the class on <html> before paint; without this
       // React warns about the server/client mismatch it deliberately creates.
       suppressHydrationWarning
     >
+      <head>
+        {/* The design system's monospace face (logs, keys, code). The Cabin
+            families are self-hosted in tokens/fonts.css. */}
+        {/* The rule this disables is a pages-router heuristic: a <link> in the
+            App Router's root layout is on every page, which is exactly what a
+            brand font needs. */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+        />
+      </head>
       <body className="min-h-dvh bg-background text-foreground">
         <Providers>
           <AppShell>{children}</AppShell>

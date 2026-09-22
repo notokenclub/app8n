@@ -2,9 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { CheckCircle2, KeyRound, Loader2, Lock, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button, Icon, IconButton, Input, Tip } from "@/ds";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAnthropicKey,
@@ -27,7 +25,7 @@ export function AnthropicKeyField() {
   const clear = useClearAnthropicKey();
   const [value, setValue] = React.useState("");
 
-  if (isLoading) return <Skeleton className="h-28 rounded-2xl" />;
+  if (isLoading) return <Skeleton className="h-28 rounded-md" />;
 
   const submit = () => {
     const key = value.trim();
@@ -45,83 +43,77 @@ export function AnthropicKeyField() {
   };
 
   return (
-    <div className="space-y-3 rounded-2xl border border-border bg-card p-3.5">
+    <div className="space-y-space-sm rounded-md border border-hairline bg-canvas p-space-sm">
       {data?.source === "vault" && (
-        <div className="flex items-center gap-2 text-sm">
-          <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
+        <div className="flex items-center gap-space-xs text-body-md">
+          <span className="shrink-0 text-success">
+            <Icon name="CheckCircle" size={16} />
+          </span>
           <span className="min-w-0 flex-1">
             Key stored in the vault
-            <span className="ml-1.5 font-mono text-xs text-muted-foreground">
+            <span className="ml-space-xs font-mono text-caption text-muted">
               {data.hint}
             </span>
           </span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
+          <IconButton
+              variant="square"
+            size={32}
             aria-label="Remove key"
             disabled={clear.isPending}
+            icon={<Icon name={clear.isPending ? "Clock" : "Delete"} size={16} />}
             onClick={() =>
               clear.mutate(undefined, {
                 onSuccess: () => toast.info("Key removed from the vault."),
               })
             }
-          >
-            {clear.isPending ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <Trash2 />
-            )}
-          </Button>
+          />
         </div>
       )}
 
       {data?.source === "env" && (
-        <p className="text-sm text-muted-foreground">
-          Using{" "}
-          <code className="font-mono text-xs">ANTHROPIC_API_KEY</code> from the
-          environment{" "}
-          <span className="font-mono text-xs">{data.hint}</span>. A key saved
-          here takes precedence.
+        <p className="text-body-md text-body">
+          Using <code className="text-caption">ANTHROPIC_API_KEY</code> from the
+          environment <span className="font-mono text-caption">{data.hint}</span>
+          . A key saved here takes precedence.
         </p>
       )}
 
       {data?.source === "none" && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body-md text-body">
           The agent needs an Anthropic key before it can do anything. Nothing
           leaves this machine except the calls to Anthropic itself.
         </p>
       )}
 
-      <div className="flex gap-2">
-        <Input
-          type="password"
-          inputMode="text"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="sk-ant-…"
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") submit();
-          }}
-          className="flex-1 font-mono text-sm"
-        />
+      <div className="flex items-end gap-space-xs">
+        <div className="min-w-0 flex-1">
+          <Input
+            label="API key"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="sk-ant-…"
+            value={value}
+            icon={<Icon name="LockLocked" size={16} />}
+            onChange={(event) => setValue(event.target.value)}
+          />
+        </div>
         <Button
-          size="lg"
+          variant="primary"
+          size="sm"
           disabled={save.isPending || value.trim() === ""}
           onClick={submit}
+          icon={<Icon name={save.isPending ? "Clock" : "CheckMark"} size={16} />}
         >
-          {save.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />}
-          {save.isPending ? "Testing…" : "Save"}
+          {save.isPending ? "Testing" : "Save"}
         </Button>
       </div>
 
-      <p className="flex items-start gap-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground">
-        <Lock className="mt-0.5 size-3 shrink-0" />
+      <Tip IconComponent={Icon}>
         Encrypted with AES-256-GCM in the local vault and tested against
         Anthropic before it is saved. It is never returned by the API once
         stored.
-      </p>
+      </Tip>
     </div>
   );
 }

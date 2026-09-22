@@ -2,10 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, Plus, TriangleAlert, Unplug } from "lucide-react";
-import { cn } from "cn";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge, Button, Icon, SectionMessage, TextBadge } from "@/ds";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useDisconnectAccount,
@@ -26,22 +23,18 @@ import { SERVICE_ICONS } from "@/lib/tool-display";
 function ServiceGrid({ account }: { account: LinkedAccount }) {
   const granted = new Set(account.services);
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-space-xxs">
       {GOOGLE_SERVICES.map((service) => {
-        const Icon = SERVICE_ICONS[service];
         const on = granted.has(service);
         return (
-          <span
-            key={service}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium",
-              on
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                : "border-border bg-muted/40 text-muted-foreground line-through decoration-muted-foreground/50",
-            )}
-          >
-            {Icon && <Icon className="size-3" />}
-            {SERVICE_LABELS[service]}
+          <span key={service} className={on ? undefined : "opacity-60"}>
+            <Badge tone={on ? "success" : "neutral"}>
+              <span className="inline-flex items-center gap-space-xxs">
+                <Icon name={SERVICE_ICONS[service] ?? "Automation"} size={16} />
+                {SERVICE_LABELS[service]}
+                {!on && " — not granted"}
+              </span>
+            </Badge>
           </span>
         );
       })}
@@ -58,39 +51,37 @@ export function GoogleAccounts() {
     // A full navigation, not fetch: Google's consent screen has to be driven
     // by the browser. On native, the Capacitor shell intercepts this route and
     // opens the system browser instead (see lib/mobile/native.ts).
-    window.location.href = apiUrl(
-      "/api/auth/google/start?returnTo=/settings",
-    );
+    window.location.href = apiUrl("/api/auth/google/start?returnTo=/settings");
   };
 
   if (isLoading) {
-    return <Skeleton className="h-32 rounded-2xl" />;
+    return <Skeleton className="h-32 rounded-md" />;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-space-sm">
       {data?.googleConfigured === false && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-200">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-          <span>
-            Google OAuth is not configured. Add{" "}
-            <code className="font-mono">GOOGLE_CLIENT_ID</code> and{" "}
-            <code className="font-mono">GOOGLE_CLIENT_SECRET</code> to{" "}
-            <code className="font-mono">.env.local</code> to connect a real
-            account.
-          </span>
-        </div>
+        <SectionMessage
+          appearance="warning"
+          title="Google OAuth is not configured"
+          IconComponent={Icon}
+        >
+          Add <code className="text-caption">GOOGLE_CLIENT_ID</code> and{" "}
+          <code className="text-caption">GOOGLE_CLIENT_SECRET</code> to{" "}
+          <code className="text-caption">.env.local</code> to connect a real
+          account.
+        </SectionMessage>
       )}
 
       {data?.mockMode && (
-        <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <SectionMessage appearance="information" IconComponent={Icon}>
           Running with mock Google connectors — no live Workspace data is being
           read or written.
-        </p>
+        </SectionMessage>
       )}
 
       {data?.accounts.length === 0 && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body-md text-body">
           No Google account connected yet. app8n can&apos;t read your mail or
           calendar until one is.
         </p>
@@ -99,9 +90,9 @@ export function GoogleAccounts() {
       {data?.accounts.map((account) => (
         <div
           key={account.id}
-          className="space-y-3 rounded-2xl border border-border bg-card p-3.5"
+          className="space-y-space-sm rounded-md border border-hairline bg-canvas p-space-sm"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-space-sm">
             {account.avatarUrl ? (
               // A 36px avatar from Google's own CDN gains nothing from the
               // image optimiser, and next/image would force a remotePatterns
@@ -113,34 +104,39 @@ export function GoogleAccounts() {
                 className="size-9 shrink-0 rounded-full"
               />
             ) : (
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium uppercase">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-body-md font-medium text-ink uppercase">
                 {account.email.slice(0, 1)}
               </span>
             )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">
+              <p className="truncate text-body-md font-medium text-ink">
                 {account.displayName ?? account.email}
               </p>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-caption text-muted">
                 {account.email}
               </p>
             </div>
             {account.isPrimary && (
-              <Badge variant="secondary" className="shrink-0">
-                Primary
-              </Badge>
+              <span className="shrink-0">
+                <TextBadge tone="primary">Primary</TextBadge>
+              </span>
             )}
           </div>
 
           <ServiceGrid account={account} />
 
           {confirming === account.id ? (
-            <div className="flex gap-2">
+            <div className="flex gap-space-xs">
               <Button
-                variant="destructive"
+                variant="primary"
                 size="sm"
-                className="flex-1"
                 disabled={disconnect.isPending}
+                icon={
+                  <Icon
+                    name={disconnect.isPending ? "Clock" : "LogOut"}
+                    size={16}
+                  />
+                }
                 onClick={() =>
                   disconnect.mutate(account.id, {
                     onSuccess: () => {
@@ -156,17 +152,11 @@ export function GoogleAccounts() {
                   })
                 }
               >
-                {disconnect.isPending ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Unplug />
-                )}
                 Yes, disconnect
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="flex-1"
                 onClick={() => setConfirming(null)}
               >
                 Cancel
@@ -174,12 +164,11 @@ export function GoogleAccounts() {
             </div>
           ) : (
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
-              className="w-full"
+              icon={<Icon name="LogOut" size={16} />}
               onClick={() => setConfirming(account.id)}
             >
-              <Unplug />
               Disconnect
             </Button>
           )}
@@ -187,13 +176,12 @@ export function GoogleAccounts() {
       ))}
 
       <Button
-        variant={data?.accounts.length ? "outline" : "default"}
-        size="lg"
-        className="w-full"
+        variant={data?.accounts.length ? "secondary" : "primary"}
+        size="md"
         disabled={data?.googleConfigured === false}
         onClick={connect}
+        icon={<Icon name="Add" size={16} />}
       >
-        <Plus />
         {data?.accounts.length ? "Connect another account" : "Connect Google"}
       </Button>
     </div>

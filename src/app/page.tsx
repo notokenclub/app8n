@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/shell/page-header";
 export default function Home() {
   return (
     <>
-      <PageHeader title="app8n" subtitle="Your Workspace, on autopilot" />
+      <PageHeader title="app8n" subtitle="Chat-driven automation for your Google Workspace" />
       <ChatView />
     </>
   );

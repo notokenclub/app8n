@@ -23,7 +23,8 @@
     "cap:add:ios": "cap add ios",
     "cap:add:android": "cap add android",
     "cap:open:ios": "cap open ios",
-    "cap:open:android": "cap open android"
+    "cap:open:android": "cap open android",
+    "lint:ds": "node scripts/ds-adherence.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.49",
@@ -45,7 +46,6 @@
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.2",
     "googleapis": "^178.0.0",
-    "lucide-react": "^1.41.0",
     "next": "16.3.4",
     "next-themes": "^0.4.6",
     "react": "19.2.8",

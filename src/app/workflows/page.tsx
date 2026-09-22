@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { LayoutGrid } from "lucide-react";
+import { Icon, IconTile } from "@/ds";
 import { PageHeader } from "@/components/shell/page-header";
 import { WorkflowList } from "@/components/workflows/workflow-list";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,17 +38,17 @@ export default function WorkflowsPage() {
       />
 
       {isLoading ? (
-        <div className="mx-auto w-full max-w-2xl space-y-3 p-4">
-          <Skeleton className="h-40 rounded-2xl" />
-          <Skeleton className="h-40 rounded-2xl" />
+        <div className="mx-auto w-full max-w-2xl space-y-space-sm p-space-md">
+          <Skeleton className="h-40 rounded-md" />
+          <Skeleton className="h-40 rounded-md" />
         </div>
       ) : data && data.length > 0 ? (
         <div className="flex min-h-0 flex-1">
           <div
             className={
               isDesktop
-                ? "scroll-region w-80 shrink-0 overflow-y-auto border-r border-border p-4"
-                : "mx-auto w-full max-w-2xl p-4"
+                ? "scroll-region w-80 shrink-0 overflow-y-auto border-r border-border p-space-md"
+                : "mx-auto w-full max-w-2xl p-space-md"
             }
           >
             <WorkflowList
@@ -69,13 +69,17 @@ export default function WorkflowsPage() {
           )}
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-20 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-            <LayoutGrid className="size-6" />
-          </span>
+        <div className="flex flex-1 flex-col items-center justify-center gap-space-sm px-space-lg py-space-xxl text-center">
+          <IconTile
+            appearance="neutral"
+            size={48}
+            icon={<Icon name="DataFlow" size={16} />}
+          />
           <div>
-            <p className="text-sm font-medium">No blueprints yet</p>
-            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+            <p className="font-display text-title-sm text-ink">
+              No blueprints yet
+            </p>
+            <p className="mt-space-xxs max-w-sm text-caption text-muted">
               Ask in chat for something to happen on a schedule — &ldquo;every
               Monday at 8am, summarise my unread mail&rdquo; — and it will be
               saved here.
