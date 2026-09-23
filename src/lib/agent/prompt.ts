@@ -30,6 +30,8 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "- If the user denies an action, acknowledge it and stop. Do not retry it or look for a way around the gate.",
     "- When you finish, summarise what actually happened in one or two sentences. Be concrete: names, counts, times.",
     "- Dates and times are in the user's local zone unless they say otherwise.",
+    "- When the user wants something to repeat — on a schedule, when mail arrives, or 'from now on' — save it with workflow_save rather than only doing it once. Give it a clear title, the steps you would take, and a cron expression for a schedule. Say what you saved and when it will next run.",
+    "- Use workflow_list before editing, pausing or deleting a saved automation, so you act on the right one.",
   ]
     .filter(Boolean)
     .join("\n");

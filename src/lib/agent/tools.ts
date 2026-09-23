@@ -6,6 +6,14 @@ import * as calendar from "@/lib/google/services/calendarService";
 import * as sheets from "@/lib/google/services/sheetsService";
 import * as docs from "@/lib/google/services/docsService";
 import * as tasks from "@/lib/google/services/tasksService";
+import {
+  deleteWorkflow,
+  describeWorkflow,
+  listWorkflows,
+  saveWorkflow,
+  setWorkflowStatus,
+} from "@/lib/workflows/authoring";
+import { TRIGGER_TYPES, WORKFLOW_STATUSES } from "@/lib/db/schema";
 
 /**
  * `read`     — no side effects.
@@ -322,6 +330,128 @@ export const AGENT_TOOLS: AgentTool[] = [
       taskListId: z.string().optional(),
     }),
     run: (args, ctx) => tasks.completeTask({ ...ctx, ...args }),
+  }),
+
+  // ---------------------------------------------------------------------
+  // Core tools. These act on app8n itself rather than on Google, which is
+  // what turns "make that a daily thing" into a real automation instead of a
+  // promise the agent cannot keep. `service: "core"` means they are always in
+  // the toolset, even before a Google account is connected.
+  // ---------------------------------------------------------------------
+
+  defineTool({
+    name: "workflow_save",
+    description:
+      "Save the current request as a repeatable automation (a blueprint), or update one by id. Use this when the user asks for something to happen on a schedule, when new mail arrives, or to be saved for later. Steps are the plan; a step with no tool is a judgement call the agent makes at run time.",
+    service: "core",
+    impact: "write",
+    // Creating something that will act unattended, on a schedule, is exactly
+    // the kind of decision the gate exists for — and the approval card lets
+    // the user correct the schedule before it is saved.
+    requiresApproval: true,
+    parameters: z.object({
+      id: z
+        .string()
+        .optional()
+        .describe("Existing workflow id, when editing rather than creating"),
+      title: z.string().describe("Short name, sentence case"),
+      description: z
+        .string()
+        .optional()
+        .describe("What the automation should do, in the user's own terms"),
+      triggerType: z
+        .enum(TRIGGER_TYPES)
+        .describe(
+          "'cron' for a schedule, 'gmail_poll' for new mail, 'webhook' for an external call, 'manual' to run on demand",
+        ),
+      cronExpression: z
+        .string()
+        .optional()
+        .describe("Five-field cron, required when triggerType is 'cron'"),
+      steps: z
+        .array(
+          z.object({
+            label: z.string(),
+            tool: z
+              .string()
+              .optional()
+              .describe("Registry tool name, when the step maps onto one"),
+            description: z.string().optional(),
+          }),
+        )
+        .optional(),
+      isAgentic: z
+        .boolean()
+        .optional()
+        .describe(
+          "True when the agent should adapt the plan; false to run the steps literally",
+        ),
+    }),
+    run: async (args, ctx) => {
+      const saved = await saveWorkflow({ ...args, userId: ctx.userId });
+      return {
+        id: saved.id,
+        title: saved.title,
+        status: saved.status,
+        triggerType: saved.triggerType,
+        cronExpression: saved.cronExpression,
+        steps: saved.nodesJson.length,
+      };
+    },
+  }),
+
+  defineTool({
+    name: "workflow_list",
+    description:
+      "List the user's saved automations with their id, status and schedule. Call this before editing, pausing or deleting one so the right id is used.",
+    service: "core",
+    impact: "read",
+    parameters: z.object({}),
+    run: async (_args, ctx) => {
+      const rows = await listWorkflows(ctx.userId);
+      return {
+        workflows: rows.map((row) => ({
+          id: row.id,
+          summary: describeWorkflow(row),
+          status: row.status,
+          triggerType: row.triggerType,
+          cronExpression: row.cronExpression,
+          lastRunAt: row.lastRunAt?.toISOString() ?? null,
+        })),
+      };
+    },
+  }),
+
+  defineTool({
+    name: "workflow_set_status",
+    description:
+      "Pause, resume, archive or draft a saved automation. Reversible, so it runs without an approval gate.",
+    service: "core",
+    impact: "write",
+    parameters: z.object({
+      id: z.string(),
+      status: z.enum(WORKFLOW_STATUSES),
+    }),
+    run: async (args, ctx) => {
+      const updated = await setWorkflowStatus(ctx.userId, args.id, args.status);
+      return { id: updated.id, title: updated.title, status: updated.status };
+    },
+  }),
+
+  defineTool({
+    name: "workflow_delete",
+    description:
+      "Delete a saved automation permanently, along with its run history. Prefer pausing unless the user asks for it to be removed.",
+    service: "core",
+    impact: "write",
+    // Unlike pausing, this cannot be undone, so it goes through the gate.
+    requiresApproval: true,
+    parameters: z.object({ id: z.string() }),
+    run: async (args, ctx) => {
+      const removed = await deleteWorkflow(ctx.userId, args.id);
+      if (!removed) throw new Error("No such workflow.");
+      return { id: args.id, deleted: true };
+    },
   }),
 ];
 

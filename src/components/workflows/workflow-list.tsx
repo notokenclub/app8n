@@ -1,11 +1,25 @@
 "use client";
 
+import * as React from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
-import { Badge, Button, Icon, IconTile, TextBadge, type IconName } from "@/ds";
+import {
+  Badge,
+  Button,
+  Divider,
+  Icon,
+  IconTile,
+  TextBadge,
+  Tooltip,
+  type IconName,
+} from "@/ds";
 import { toolDisplay } from "@/lib/tool-display";
 import {
+  useDeleteWorkflow,
+  useRevealWebhook,
+  useRunWorkflow,
   useSetWorkflowStatus,
+  type WebhookDetails,
   type WorkflowSummary,
 } from "@/hooks/use-workflows";
 
@@ -46,6 +60,58 @@ function triggerLabel(workflow: WorkflowSummary): string {
  * cut-down stand-in for the canvas. A user who never opens a desktop browser
  * should not be missing information.
  */
+/**
+ * The call-out that turns a `webhook` workflow into something an outside
+ * system can actually call. The secret is minted on first reveal and shown
+ * once per session: it is a credential, so it is not part of the list payload
+ * every client already holds.
+ */
+function WebhookPanel({ workflowId }: { workflowId: string }) {
+  const reveal = useRevealWebhook();
+  const [details, setDetails] = React.useState<WebhookDetails | null>(null);
+
+  if (!details) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={reveal.isPending}
+        icon={<Icon name="Link" size={16} />}
+        onClick={(event) => {
+          event.stopPropagation();
+          reveal.mutate(workflowId, {
+            onSuccess: setDetails,
+            onError: (error) =>
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Could not load the webhook.",
+              ),
+          });
+        }}
+      >
+        {reveal.isPending ? "Loading" : "Show webhook URL"}
+      </Button>
+    );
+  }
+
+  return (
+    <div
+      className="space-y-space-xxs rounded-sm border border-hairline bg-surface-soft p-space-xs"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <p className="font-mono text-caption break-all text-ink">{details.url}</p>
+      <p className="font-mono text-legal break-all text-muted">
+        {details.header}: {details.secret}
+      </p>
+      <p className="text-legal text-muted">
+        Send a POST with that header. The body reaches the run as data, never as
+        instructions.
+      </p>
+    </div>
+  );
+}
+
 export function WorkflowList({
   workflows,
   selectedId,
@@ -56,6 +122,13 @@ export function WorkflowList({
   onSelect?: (workflow: WorkflowSummary) => void;
 }) {
   const setStatus = useSetWorkflowStatus();
+  const runNow = useRunWorkflow();
+  const remove = useDeleteWorkflow();
+  // Deleting is two taps, not a modal: one card's worth of state, and the
+  // second tap is the confirmation.
+  const [confirmingDelete, setConfirmingDelete] = React.useState<string | null>(
+    null,
+  );
 
   return (
     <ul className="space-y-space-sm">
@@ -145,7 +218,7 @@ export function WorkflowList({
               </div>
             )}
 
-            <div className="mt-space-sm flex items-center gap-space-xs">
+            <div className="mt-space-sm flex flex-wrap items-center gap-space-xs">
               <Button
                 variant="secondary"
                 size="sm"
@@ -186,6 +259,82 @@ export function WorkflowList({
               >
                 {paused ? "Resume" : "Pause"}
               </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={runNow.isPending || workflow.status === "archived"}
+                icon={
+                  <Icon
+                    name={
+                      runNow.isPending && runNow.variables === workflow.id
+                        ? "Clock"
+                        : "ArrowRight"
+                    }
+                    size={16}
+                  />
+                }
+                onClick={(event) => {
+                  event.stopPropagation();
+                  runNow.mutate(workflow.id, {
+                    onSuccess: () =>
+                      toast.success(
+                        `${workflow.title} ran. Check the runs tab for the trace.`,
+                      ),
+                    onError: (error) =>
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : "The run could not be started.",
+                      ),
+                  });
+                }}
+              >
+                {runNow.isPending && runNow.variables === workflow.id
+                  ? "Running"
+                  : "Run now"}
+              </Button>
+
+              {confirmingDelete === workflow.id ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={remove.isPending}
+                  icon={<Icon name="Delete" size={16} />}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    remove.mutate(workflow.id, {
+                      onSuccess: () => {
+                        setConfirmingDelete(null);
+                        toast.success(`${workflow.title} deleted.`);
+                      },
+                      onError: (error) =>
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the blueprint.",
+                        ),
+                    });
+                  }}
+                >
+                  Confirm delete
+                </Button>
+              ) : (
+                <Tooltip label="Delete this automation">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={remove.isPending}
+                    icon={<Icon name="Delete" size={16} />}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setConfirmingDelete(workflow.id);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </Tooltip>
+              )}
+
               {workflow.lastRunAt && (
                 <span className="shrink-0 text-legal text-muted">
                   Last run{" "}
@@ -196,6 +345,13 @@ export function WorkflowList({
                 </span>
               )}
             </div>
+
+            {workflow.triggerType === "webhook" && (
+              <div className="mt-space-sm space-y-space-xs">
+                <Divider tone="hairline" />
+                <WebhookPanel workflowId={workflow.id} />
+              </div>
+            )}
           </li>
         );
       })}

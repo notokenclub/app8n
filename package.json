@@ -24,7 +24,8 @@
     "cap:add:android": "cap add android",
     "cap:open:ios": "cap open ios",
     "cap:open:android": "cap open android",
-    "lint:ds": "node scripts/ds-adherence.mjs"
+    "lint:ds": "node scripts/ds-adherence.mjs",
+    "build:worker": "esbuild scripts/worker.ts --bundle --platform=node --target=node22 --format=cjs --external:better-sqlite3 --outfile=dist/worker.cjs --log-level=warning"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.49",
@@ -63,6 +64,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",

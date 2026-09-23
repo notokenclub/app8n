@@ -128,6 +128,26 @@ export const TOOL_DISPLAY: Record<string, ToolDisplay> = {
     done: "Completed task",
     icon: "CheckCircle",
   },
+  workflow_save: {
+    active: "Saving automation",
+    done: "Saved automation",
+    icon: "DataFlow",
+  },
+  workflow_list: {
+    active: "Checking automations",
+    done: "Checked automations",
+    icon: "ListBulleted",
+  },
+  workflow_set_status: {
+    active: "Updating automation",
+    done: "Updated automation",
+    icon: "Edit",
+  },
+  workflow_delete: {
+    active: "Deleting automation",
+    done: "Deleted automation",
+    icon: "Delete",
+  },
 };
 
 const FALLBACK: ToolDisplay = {

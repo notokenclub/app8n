@@ -79,6 +79,26 @@ async function buildAgentConfig(options: AgentRunOptions): Promise<AgentConfig> 
       input: { messages: options.messages },
     }));
 
+  // Everything after the row exists must close it on the way out: the model
+  // is resolved below, and a missing API key used to throw here and leave a
+  // run marked `running` for ever — a ghost in the history and a client that
+  // polls it until the tab is closed.
+  try {
+    return await assembleAgentConfig(options, executionId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await recordSteps(executionId, [
+      { kind: "error", message, at: Date.now() },
+    ]);
+    await finishExecution({ executionId, status: "failed", error: message });
+    throw error;
+  }
+}
+
+async function assembleAgentConfig(
+  options: AgentRunOptions,
+  executionId: string,
+): Promise<AgentConfig> {
   const ctx: GoogleContext = {
     userId: options.userId,
     accountId: options.accountId,

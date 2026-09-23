@@ -33,6 +33,24 @@ import {
   isValidCron,
   selectDueWorkflows,
 } from "../src/lib/scheduler/jobs";
+import {
+  deleteWorkflow,
+  listWorkflows,
+  saveWorkflow,
+  setWorkflowStatus,
+  WorkflowValidationError,
+} from "../src/lib/workflows/authoring";
+import {
+  ensureWebhookSecret,
+  getWebhookSecret,
+  revokeWebhookSecret,
+  webhookSecretMatches,
+} from "../src/lib/workflows/webhooks";
+import {
+  failStaleExecutions,
+  STALE_RUN_MS,
+} from "../src/lib/agent/execution";
+import { checkEnvironment } from "../src/lib/env";
 
 const usage = {
   inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
@@ -461,6 +479,349 @@ function workflowFixture(overrides: Partial<Workflow>): Workflow {
     ...overrides,
   } as Workflow;
 }
+
+// --- Authoring an automation from a conversation ---------------------------
+
+check("a saved automation lands active, with its plan intact", async () => {
+  const saved = await saveWorkflow({
+    userId,
+    title: "Weekday briefing",
+    description: "Summarise the day every weekday morning",
+    triggerType: "cron",
+    cronExpression: "0 7 * * 1-5",
+    steps: [
+      { label: "List today's meetings", tool: "calendar_list_events" },
+      { label: "Decide what matters" },
+    ],
+  });
+
+  assert.equal(saved.status, "active", "a saved automation must be live");
+  assert.equal(saved.cronExpression, "0 7 * * 1-5");
+  assert.equal(saved.nodesJson.length, 2);
+  assert.equal(saved.edgesJson.length, 1, "steps must be chained");
+
+  // The worker reads this column to build the run instruction, so a step with
+  // no tool has to survive the round trip as a judgement step.
+  const [first, second] = saved.nodesJson as Record<string, unknown>[];
+  assert.equal(first.tool, "calendar_list_events");
+  assert.equal(second.tool, undefined);
+});
+
+check("a schedule that cannot fire is refused, not saved", async () => {
+  await assert.rejects(
+    () =>
+      saveWorkflow({
+        userId,
+        title: "Broken schedule",
+        triggerType: "cron",
+        cronExpression: "not a cron",
+      }),
+    WorkflowValidationError,
+  );
+
+  await assert.rejects(
+    () => saveWorkflow({ userId, title: "No schedule", triggerType: "cron" }),
+    WorkflowValidationError,
+    "a cron workflow with no expression would never run",
+  );
+
+  await assert.rejects(
+    () =>
+      saveWorkflow({
+        userId,
+        title: "Imaginary tool",
+        triggerType: "manual",
+        steps: [{ label: "Do the thing", tool: "gmail_send_telepathy" }],
+      }),
+    WorkflowValidationError,
+    "a step naming a tool that does not exist must not be saved",
+  );
+});
+
+check("editing keeps the id and replaces the plan", async () => {
+  const created = await saveWorkflow({
+    userId,
+    title: "Draft name",
+    triggerType: "manual",
+    steps: [{ label: "One" }],
+  });
+
+  const edited = await saveWorkflow({
+    userId,
+    id: created.id,
+    title: "Better name",
+    triggerType: "manual",
+    steps: [{ label: "One" }, { label: "Two" }],
+  });
+
+  assert.equal(edited.id, created.id);
+  assert.equal(edited.title, "Better name");
+  assert.equal(edited.nodesJson.length, 2);
+});
+
+check("another user's automation cannot be edited, paused or deleted", async () => {
+  const [stranger] = await db
+    .insert(users)
+    .values({ email: `stranger-${Date.now()}@app8n.local` })
+    .returning();
+
+  const mine = await saveWorkflow({
+    userId,
+    title: "Mine alone",
+    triggerType: "manual",
+  });
+
+  await assert.rejects(
+    () =>
+      saveWorkflow({
+        userId: stranger.id,
+        id: mine.id,
+        title: "Hijacked",
+        triggerType: "manual",
+      }),
+    WorkflowValidationError,
+  );
+  await assert.rejects(
+    () => setWorkflowStatus(stranger.id, mine.id, "paused"),
+    WorkflowValidationError,
+  );
+  assert.equal(
+    await deleteWorkflow(stranger.id, mine.id),
+    false,
+    "delete must not reach across owners",
+  );
+
+  const [still] = await db
+    .select()
+    .from(workflows)
+    .where(eq(workflows.id, mine.id));
+  assert.equal(still.title, "Mine alone");
+  assert.equal(still.status, "active");
+});
+
+check("deleting removes the automation from the owner's list", async () => {
+  const doomed = await saveWorkflow({
+    userId,
+    title: "Temporary",
+    triggerType: "manual",
+  });
+
+  assert.equal(await deleteWorkflow(userId, doomed.id), true);
+  const remaining = await listWorkflows(userId);
+  assert.ok(
+    !remaining.some((row) => row.id === doomed.id),
+    "deleted workflow must be gone",
+  );
+});
+
+// --- Webhook triggers ------------------------------------------------------
+
+check("a webhook secret is minted once, stored encrypted and verified", async () => {
+  const hook = await saveWorkflow({
+    userId,
+    title: "Inbound lead",
+    triggerType: "webhook",
+  });
+
+  const secret = await ensureWebhookSecret(userId, hook.id);
+  assert.ok(secret.length >= 24, "a webhook secret must be unguessable");
+  assert.equal(
+    await ensureWebhookSecret(userId, hook.id),
+    secret,
+    "revealing twice must not rotate the secret",
+  );
+
+  const stored = await db.query.credentialVault.findFirst({
+    where: (table, { and: andOp, eq: eqOp }) =>
+      andOp(eqOp(table.userId, userId), eqOp(table.name, `webhook:${hook.id}`)),
+  });
+  assert.ok(stored, "the secret must be in the vault");
+  assert.ok(
+    !stored!.secret.includes(secret),
+    "the plaintext secret must never be stored",
+  );
+
+  assert.equal(webhookSecretMatches(secret, secret), true);
+  assert.equal(webhookSecretMatches("wrong", secret), false);
+  assert.equal(webhookSecretMatches(null, secret), false);
+
+  await revokeWebhookSecret(userId, hook.id);
+  assert.equal(
+    await getWebhookSecret(userId, hook.id),
+    null,
+    "revoking must remove the secret",
+  );
+});
+
+// --- Runs that outlive their process ---------------------------------------
+
+check("a run whose process died is closed by the sweep", async () => {
+  const [ghost] = await db
+    .insert(executionLogs)
+    .values({
+      userId,
+      trigger: "chat",
+      status: "running",
+      startedAt: new Date(Date.now() - STALE_RUN_MS - 60_000),
+    })
+    .returning();
+
+  const [fresh] = await db
+    .insert(executionLogs)
+    .values({ userId, trigger: "chat", status: "running", startedAt: new Date() })
+    .returning();
+
+  const closed = await failStaleExecutions();
+  assert.ok(closed >= 1);
+
+  const [ghostAfter] = await db
+    .select()
+    .from(executionLogs)
+    .where(eq(executionLogs.id, ghost.id));
+  assert.equal(ghostAfter.status, "failed");
+  assert.ok(ghostAfter.errorTrace, "a closed run must say why");
+
+  const [freshAfter] = await db
+    .select()
+    .from(executionLogs)
+    .where(eq(executionLogs.id, fresh.id));
+  assert.equal(freshAfter.status, "running", "a live run must not be swept");
+});
+
+check("a run that fails before its first step is still closed out", async () => {
+  const before = new Set(
+    (
+      await db
+        .select({ id: executionLogs.id })
+        .from(executionLogs)
+        .where(eq(executionLogs.userId, userId))
+    ).map((row) => row.id),
+  );
+
+  // A model that throws the moment it is called stands in for every failure
+  // that happens before the tool loop — a missing key, an unreachable
+  // provider — which used to leave a row saying `running` for ever.
+  const exploding = new MockLanguageModelV4({
+    doGenerate: async () => {
+      throw new Error("provider unreachable");
+    },
+  });
+
+  const result = await runAgent({
+    userId,
+    trigger: "chat",
+    messages: [{ role: "user", content: "hello" }],
+    model: exploding,
+  }).catch(() => null);
+
+  const after = await db
+    .select()
+    .from(executionLogs)
+    .where(eq(executionLogs.userId, userId));
+  const created = after.filter((row) => !before.has(row.id));
+
+  assert.equal(created.length, 1, "the run must be recorded");
+  assert.equal(created[0].status, "failed", "and closed, not left running");
+  assert.match(created[0].errorTrace ?? "", /provider unreachable/);
+  assert.equal(result?.status, "failed", "the caller is told it failed");
+});
+
+// --- Deployment preflight --------------------------------------------------
+
+check("production refuses to start unprotected or unconfigured", () => {
+  const base = {
+    NODE_ENV: "production",
+    APP8N_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+    APP_URL: "https://app8n.example.com",
+    APP8N_ACCESS_TOKEN: "x".repeat(32),
+  } as NodeJS.ProcessEnv;
+
+  assert.equal(checkEnvironment(base).errors.length, 0, "a complete production env passes");
+
+  const noToken = checkEnvironment({ ...base, APP8N_ACCESS_TOKEN: undefined });
+  assert.ok(
+    noToken.errors.some((issue) => issue.variable === "APP8N_ACCESS_TOKEN"),
+    "an exposed backend with no access token must be refused",
+  );
+
+  const loopback = checkEnvironment({ ...base, APP_URL: "http://localhost:3000" });
+  assert.ok(
+    loopback.errors.some((issue) => issue.variable === "APP_URL"),
+    "a production APP_URL pointing at localhost breaks OAuth and webhooks",
+  );
+
+  const badKey = checkEnvironment({ ...base, APP8N_ENCRYPTION_KEY: "tooshort" });
+  assert.ok(
+    badKey.errors.some((issue) => issue.variable === "APP8N_ENCRYPTION_KEY"),
+    "a malformed vault key must be caught at boot",
+  );
+
+  const shortToken = checkEnvironment({ ...base, APP8N_ACCESS_TOKEN: "short" });
+  assert.ok(shortToken.errors.length > 0, "a guessable token is not protection");
+
+  // Development stays permissive: half-configured is the normal state there.
+  assert.equal(checkEnvironment({ NODE_ENV: "development" } as NodeJS.ProcessEnv).errors.length, 0);
+});
+
+check("'make that a daily thing' saves an automation, through the gate", async () => {
+  const model = scriptedModel([
+    toolCallStep("call-save-1", "workflow_save", {
+      title: "Morning mail summary",
+      description: "Summarise unread mail every weekday at 8am",
+      triggerType: "cron",
+      cronExpression: "0 8 * * 1-5",
+      steps: [
+        { label: "Search unread mail", tool: "gmail_search_messages" },
+        { label: "Summarise what matters" },
+      ],
+    }),
+    textStep("Saved."),
+  ]);
+
+  const before = (await listWorkflows(userId)).length;
+
+  const run = await runAgent({
+    userId,
+    trigger: "chat",
+    messages: [{ role: "user", content: "summarise my unread mail every weekday at 8am" }],
+    model,
+  });
+
+  // Creating something that will act unattended is gated, so nothing is saved
+  // until a human says yes.
+  assert.equal(run.status, "awaiting_approval", "saving an automation must gate");
+  assert.equal(
+    (await listWorkflows(userId)).length,
+    before,
+    "no workflow may exist before the gate is approved",
+  );
+
+  const approvalId = run.approvals[0].approvalRequestId;
+  const pending = await listPendingApprovals(userId);
+  assert.ok(
+    pending.some((row) => row.id === approvalId),
+    "the gate must be listed as pending",
+  );
+
+  const approved = await resolveApproval({ approvalId, approved: true });
+  const result = await executeApprovedAction(approved);
+  assert.equal(result.executed, true, result.error);
+
+  const saved = (await listWorkflows(userId)).find(
+    (row) => row.title === "Morning mail summary",
+  );
+  assert.ok(saved, "the automation must exist after approval");
+  assert.equal(saved!.status, "active");
+  assert.equal(saved!.cronExpression, "0 8 * * 1-5");
+  assert.equal(saved!.triggerType, "cron");
+  assert.equal(saved!.nodesJson.length, 2, "the plan must be stored");
+
+  // And the scheduler must recognise it as due work rather than ignoring it.
+  assert.ok(
+    isValidCron(saved!.cronExpression!),
+    "a saved schedule must be one the worker can fire",
+  );
+});
 
 check("cron expressions are validated", () => {
   assert.ok(isValidCron("0 8 * * *"));

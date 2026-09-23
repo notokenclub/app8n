@@ -3,8 +3,9 @@
 Everything needed to pick this project up cold — what exists, why it was built this way,
 and where the seams are. If you're new, read this after the README.
 
-Current state: **Phases 1–5 complete.** Typecheck and lint clean, 8/8 vault checks,
-26/26 Google checks, 16/16 agent checks, production build succeeds with 13 routes.
+Current state: **Phases 1–6 complete.** Typecheck, lint and design-system adherence
+clean; 8/8 vault checks, 26/26 Google checks, 26/26 agent checks; production build
+succeeds with 18 routes. The product is deployable — see `docs/DEPLOYMENT.md`.
 
 ---
 
@@ -150,7 +151,9 @@ drops it, leaving a null payload — only `tsc` catches this. It has bitten us o
 
 ## 5. The tool registry
 
-21 tools in `src/lib/agent/tools.ts`. Approval is **derived, not hand-maintained**:
+25 tools in `src/lib/agent/tools.ts` — 21 Google connectors plus four `core` tools
+that act on app8n itself, which is what makes "make that a daily thing" produce a real
+automation rather than a promise. Approval is **derived, not hand-maintained**:
 
 ```ts
 requiresApproval: config.requiresApproval ?? config.impact === "external"
@@ -178,6 +181,7 @@ An unknown tool name gates rather than executes.
 | Docs | `docs_create`, **`docs_append_text`**, `docs_read` |
 | Drive | `drive_search` |
 | Tasks | `tasks_list`, `tasks_create`, `tasks_complete` |
+| app8n itself | `workflow_list`, `workflow_set_status`, **`workflow_save`**, **`workflow_delete`** |
 
 **Bold** tools are gated by the HITL approval flow.
 
@@ -251,13 +255,17 @@ npm run typecheck
 npm run lint
 npm run vault:selftest      # 8 checks
 npm run google:selftest     # 26 checks
-npm run agent:selftest      # 16 checks
+npm run agent:selftest      # 26 checks
+npm run lint:ds             # design-system adherence
 
 npm run db:generate | db:migrate | db:push | db:studio
 npm run vault:keygen        # mint APP8N_ENCRYPTION_KEY
 
 npm run cap:sync
 npm run cap:add:ios | cap:add:android | cap:open:ios | cap:open:android
+
+npm run build:worker        # bundle the scheduler for the image
+docker compose up -d --build
 ```
 
 Scripts use **relative** imports (`../src/lib/db`), not the `@/` alias — the alias is not
@@ -305,21 +313,46 @@ npm run build
 
 ---
 
-## 11. Where to pick up
+## 11. What Phase 6 closed
 
-Phases 1–5 are done. Roughly in order of value:
+Every gap the previous handoff listed as "where to pick up", except the two that need
+credentials this repository does not have.
 
-1. **Real Google credentials end-to-end.** Everything so far is verified against
+- **Workflow authoring from chat.** `workflow_save` / `workflow_list` /
+  `workflow_set_status` / `workflow_delete` in the registry, all going through
+  `src/lib/workflows/authoring.ts`, which is also what `POST /api/workflows` and
+  `PUT /api/workflows/[id]` call — so an automation written by a script and one saved
+  from a conversation are the same object, validated the same way. Saving and deleting
+  are gated: they create or destroy something that acts unattended, and the approval
+  card is where the user corrects the schedule before it is real.
+- **Run history.** `GET /api/executions` and the Runs tab on `/workflows` render
+  `stepsJson` — every tool call, result, pause and error, in the design system's log
+  console. The trace was always captured; nothing rendered it.
+- **Run now, delete, and per-card webhook details** on the blueprint list.
+- **Webhook triggers.** `POST /api/hooks/[id]`, authenticated by a per-workflow secret
+  minted into the vault and compared in constant time. A wrong secret answers 404 so the
+  endpoint cannot enumerate workflow ids. The payload reaches the run quoted as data,
+  explicitly labelled as not-instructions.
+- **Runs that outlive their process.** A failure before the first step used to leave a row
+  saying `running` for ever; `buildAgentConfig` now closes the row on the way out, and the
+  scheduler sweeps anything still `running` after 15 minutes.
+- **Approval notifications.** `APP8N_NOTIFY_WEBHOOK_URL` — any JSON POST endpoint — is
+  called for every background gate, from the worker and from "run now".
+- **Deployment.** Boot-time environment validation that exits non-zero rather than serving
+  broken, migrations applied at boot, `/api/health`, an access-token guard in
+  `src/proxy.ts`, a Dockerfile and compose file (server + bundled scheduler), and CI
+  running the full gate. `docs/DEPLOYMENT.md` is the operator's document.
+
+### Still open
+
+1. **Real Google credentials end-to-end.** Everything is verified against
    `APP8N_MOCK_GOOGLE=1`. The OAuth flow, refresh-token handling and scope consent have
-   not yet met a live Workspace account.
-2. **Native builds.** Capacitor configuration is written, but the iOS and Android projects
-   are not generated or committed, and the `app8n://` scheme still needs registering in
-   both.
-3. **Execution history UI.** `stepsJson` captures a rich trace that nothing currently
-   renders — there is no run-history view at all.
-4. **Workflow authoring.** The canvas is read-only. Turning a chat into a saved automation
-   ("make that a daily thing") is the headline feature still missing.
-5. **Approval expiry.** `expiresAt` exists on `approval_requests`; nothing sweeps it, so a
-   `PENDING` gate lives forever.
-6. **Push notifications.** `@capacitor/push-notifications` is installed but unwired. It is
-   the natural delivery channel for an approval gate that fires at 7am.
+   still not met a live Workspace account.
+2. **Native builds and native push.** Capacitor configuration is written, but the iOS and
+   Android projects are not generated, the `app8n://` scheme is not registered, and native
+   push needs an APNs key and an FCM project. The delivery hook they would use
+   (`notifyApprovalRequired`) is already called from every background run.
+3. **Postgres.** The schema is written for it; the client is still `better-sqlite3` only,
+   which is what caps the deployment at one instance.
+4. **Editing a blueprint in the UI.** The API and the agent can both edit one; the canvas
+   is still read-only.
