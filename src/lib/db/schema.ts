@@ -226,6 +226,36 @@ export const executionLogs = sqliteTable(
   ],
 );
 
+export const PUSH_PLATFORMS = ["ios", "android", "web"] as const;
+
+/**
+ * Device tokens for approval notifications.
+ *
+ * A gate opened by the scheduler at 7am has nobody watching a chat stream, so
+ * the push channel is the only way it reaches the person who must decide. The
+ * token is a delivery address issued by APNs/FCM, not a credential of the
+ * user's, so it is stored in the clear rather than in the vault.
+ */
+export const pushDevices = sqliteTable(
+  "push_devices",
+  {
+    id: primaryId(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform", { enum: PUSH_PLATFORMS }).notNull(),
+    token: text("token").notNull(),
+    /** Refreshed on every re-registration, so a stale device is identifiable. */
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("push_devices_token_idx").on(t.token),
+    index("push_devices_user_idx").on(t.userId),
+  ],
+);
+
 export const APPROVAL_STATUSES = [
   "PENDING",
   "APPROVED",
@@ -275,6 +305,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   credentials: many(credentialVault),
   workflows: many(workflows),
   executions: many(executionLogs),
+  pushDevices: many(pushDevices),
 }));
 
 export const accountsRelations = relations(accounts, ({ one, many }) => ({
@@ -326,6 +357,10 @@ export const approvalRequestsRelations = relations(
   }),
 );
 
+export const pushDevicesRelations = relations(pushDevices, ({ one }) => ({
+  user: one(users, { fields: [pushDevices.userId], references: [users.id] }),
+}));
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
@@ -338,8 +373,11 @@ export type ExecutionLog = typeof executionLogs.$inferSelect;
 export type NewExecutionLog = typeof executionLogs.$inferInsert;
 export type ApprovalRequest = typeof approvalRequests.$inferSelect;
 export type NewApprovalRequest = typeof approvalRequests.$inferInsert;
+export type PushDevice = typeof pushDevices.$inferSelect;
+export type NewPushDevice = typeof pushDevices.$inferInsert;
 
 export type TriggerType = (typeof TRIGGER_TYPES)[number];
 export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
 export type ExecutionStatus = (typeof EXECUTION_STATUSES)[number];
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
+export type PushPlatform = (typeof PUSH_PLATFORMS)[number];

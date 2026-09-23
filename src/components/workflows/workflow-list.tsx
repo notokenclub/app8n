@@ -10,15 +10,27 @@ import {
   Mail,
   Pause,
   Play,
+  Archive,
+  ArchiveRestore,
+  MoreVertical,
   Sparkles,
+  Trash2,
   Webhook,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toolDisplay } from "@/lib/tool-display";
 import {
+  useDeleteWorkflow,
   useSetWorkflowStatus,
   type WorkflowSummary,
 } from "@/hooks/use-workflows";
@@ -68,12 +80,14 @@ export function WorkflowList({
   onSelect?: (workflow: WorkflowSummary) => void;
 }) {
   const setStatus = useSetWorkflowStatus();
+  const remove = useDeleteWorkflow();
 
   return (
     <ul className="space-y-3">
       {workflows.map((workflow) => {
         const TriggerIcon = TRIGGER_ICONS[workflow.triggerType] ?? CircleDot;
         const paused = workflow.status === "paused";
+        const archived = workflow.status === "archived";
         const selected = selectedId === workflow.id;
 
         return (
@@ -161,7 +175,7 @@ export function WorkflowList({
                 variant="outline"
                 size="sm"
                 className="flex-1"
-                disabled={setStatus.isPending || workflow.status === "archived"}
+                disabled={setStatus.isPending || archived}
                 onClick={(event) => {
                   event.stopPropagation();
                   setStatus.mutate(
@@ -202,6 +216,81 @@ export function WorkflowList({
                   })}
                 </span>
               )}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      aria-label={`More actions for ${workflow.title}`}
+                      className="shrink-0 text-muted-foreground"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <MoreVertical />
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end">
+                  {/* Archiving is the reversible way to retire a blueprint:
+                      the scheduler only ever loads `active`, so an archived
+                      one stops running while its history stays attributed. */}
+                  <DropdownMenuItem
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setStatus.mutate(
+                        {
+                          id: workflow.id,
+                          status: archived ? "paused" : "archived",
+                        },
+                        {
+                          onSuccess: () =>
+                            toast.success(
+                              archived
+                                ? `${workflow.title} restored, still paused.`
+                                : `${workflow.title} archived.`,
+                            ),
+                          onError: (error) =>
+                            toast.error(
+                              error instanceof Error
+                                ? error.message
+                                : "Could not update the blueprint.",
+                            ),
+                        },
+                      );
+                    }}
+                  >
+                    {archived ? <ArchiveRestore /> : <Archive />}
+                    {archived ? "Restore" : "Archive"}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (
+                        !window.confirm(
+                          `Delete "${workflow.title}"? Its run history is deleted with it. Archive instead to keep both.`,
+                        )
+                      ) {
+                        return;
+                      }
+                      remove.mutate(workflow.id, {
+                        onSuccess: () =>
+                          toast.success(`${workflow.title} deleted.`),
+                        onError: (error) =>
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : "Could not delete the blueprint.",
+                          ),
+                      });
+                    }}
+                  >
+                    <Trash2 />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </li>
         );

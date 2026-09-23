@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { cn } from "cn";
 import { usePendingApprovals } from "@/hooks/use-approvals";
+import { usePushRegistration } from "@/hooks/use-push";
 import { isActivePath, NAV_ITEMS } from "@/lib/nav";
 
 /** Small count bubble on the Approvals tab. Hidden at zero. */
@@ -87,7 +88,14 @@ function TabBar({ pending }: { pending: number }) {
       // constant so the layout does not jump between devices.
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/85 pb-safe-b backdrop-blur-lg md:hidden"
     >
-      <div className="mx-auto grid h-tabbar max-w-lg grid-cols-4">
+      <div
+        className="mx-auto grid h-tabbar max-w-lg"
+        // Derived from the nav list rather than hardcoded: a tab added to
+        // NAV_ITEMS must not silently overflow a fixed column count.
+        style={{
+          gridTemplateColumns: `repeat(${NAV_ITEMS.length}, minmax(0, 1fr))`,
+        }}
+      >
         {NAV_ITEMS.map((item) => {
           const active = isActivePath(item.href, pathname);
           return (
@@ -132,6 +140,9 @@ function TabBar({ pending }: { pending: number }) {
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: approvals } = usePendingApprovals();
+  // Mounted at the frame so a device registers once per app launch, whichever
+  // tab the user happens to land on first.
+  usePushRegistration();
   const pending = approvals?.length ?? 0;
 
   return (

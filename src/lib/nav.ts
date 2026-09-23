@@ -1,4 +1,5 @@
 import {
+  History,
   LayoutGrid,
   MessagesSquare,
   Settings2,
@@ -37,6 +38,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Blueprints",
     icon: LayoutGrid,
     description: "Saved and scheduled automations",
+  },
+  {
+    href: "/runs",
+    label: "Activity",
+    icon: History,
+    description: "What every run actually did",
   },
   {
     href: "/settings",

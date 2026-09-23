@@ -22,7 +22,7 @@ export interface AccountsResponse {
 }
 
 export const ACCOUNTS_KEY = ["google-accounts"] as const;
-export const ANTHROPIC_KEY = ["anthropic-key"] as const;
+export const MODEL_KEY = ["model-key"] as const;
 
 export function useGoogleAccounts() {
   return useQuery({
@@ -43,44 +43,102 @@ export function useDisconnectAccount() {
   });
 }
 
-export interface AnthropicKeyStatus {
-  source: "vault" | "env" | "none";
-  hint: string | null;
-  updatedAt: string | null;
+export type ServiceProbeStatus = "ok" | "failed" | "not_exercisable";
+
+export interface ServiceProbe {
+  service: string;
+  status: ServiceProbeStatus;
+  error?: string;
 }
 
-export function useAnthropicKey() {
-  return useQuery({
-    queryKey: ANTHROPIC_KEY,
-    queryFn: () => apiFetch<AnthropicKeyStatus>("/api/settings/anthropic-key"),
-  });
+export interface AccountHealth {
+  accountId: string;
+  email: string;
+  ok: boolean;
+  needsReconnect: boolean;
+  mock: boolean;
+  error?: string;
+  services: ServiceProbe[];
+  checkedAt: string;
 }
 
 /**
- * Saves a key. The server verifies it against Anthropic first and returns the
- * masked status; the plaintext is never read back, so the client has no copy
- * to leak once the request is done.
+ * Verifies a linked account against Google for real.
+ *
+ * A mutation rather than a query: it spends live API calls, so it runs when
+ * the user asks for it and never on a background refetch.
  */
-export function useSaveAnthropicKey() {
-  const queryClient = useQueryClient();
+export function useCheckAccount() {
   return useMutation({
-    mutationFn: (key: string) =>
-      apiFetch<{ saved: boolean; status: AnthropicKeyStatus }>(
-        "/api/settings/anthropic-key",
-        { method: "PUT", body: JSON.stringify({ key }) },
+    mutationFn: (accountId: string) =>
+      apiFetch<AccountHealth>(
+        `/api/auth/google/health?accountId=${encodeURIComponent(accountId)}`,
+        { method: "POST" },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ANTHROPIC_KEY }),
   });
 }
 
-export function useClearAnthropicKey() {
+export interface ModelKeyStatus {
+  provider: "anthropic" | "google" | "openai" | "ollama";
+  providerLabel: string;
+  requiresKey: boolean;
+  baseUrl?: string;
+  source: "vault" | "env" | "none";
+  hint: string | null;
+  updatedAt: string | null;
+  envVar: string;
+  placeholder: string;
+  consoleUrl: string;
+  freeTier: boolean;
+}
+
+export function useModelKey() {
+  return useQuery({
+    queryKey: MODEL_KEY,
+    queryFn: () => apiFetch<ModelKeyStatus>("/api/settings/model-key"),
+  });
+}
+
+export function useSaveModelKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) =>
+      apiFetch<{ saved: boolean; status: ModelKeyStatus }>(
+        "/api/settings/model-key",
+        { method: "PUT", body: JSON.stringify({ key }) },
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: MODEL_KEY }),
+  });
+}
+
+export function useClearModelKey() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiFetch<{ cleared: boolean; status: AnthropicKeyStatus }>(
-        "/api/settings/anthropic-key",
+      apiFetch<{ cleared: boolean; status: ModelKeyStatus }>(
+        "/api/settings/model-key",
         { method: "DELETE" },
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ANTHROPIC_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: MODEL_KEY }),
+  });
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Checks a keyless provider actually answers.
+ *
+ * A local runtime has no key to validate on save, so without this its first
+ * sign of trouble would be a failed run rather than a failed setup.
+ */
+export function useTestProvider() {
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<ConnectionTestResult>("/api/settings/model-key", {
+        method: "POST",
+      }),
   });
 }

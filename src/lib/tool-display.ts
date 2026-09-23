@@ -21,6 +21,7 @@ import {
   Send,
   Table2,
   Wrench,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -151,6 +152,11 @@ export const TOOL_DISPLAY: Record<string, ToolDisplay> = {
     done: "Completed task",
     icon: CircleCheckBig,
   },
+  workflow_save: {
+    active: "Saving automation",
+    done: "Saved automation",
+    icon: Workflow,
+  },
 };
 
 const FALLBACK: ToolDisplay = {
@@ -176,4 +182,5 @@ export const SERVICE_ICONS: Record<string, LucideIcon> = {
   docs: FileText,
   drive: FolderSearch,
   tasks: ListTodo,
+  workflow: Workflow,
 };
