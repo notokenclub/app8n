@@ -33,15 +33,15 @@
       "warn",
       {
         "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
-        "message": "Raw hex color — use a design-system color token via var()."
+        "message": "Raw hex color \u2014 use a design-system color token via var()."
       },
       {
         "selector": "Literal[value=/\\b\\d+px\\b/]",
-        "message": "Raw px value — use a design-system spacing token via var()."
+        "message": "Raw px value \u2014 use a design-system spacing token via var()."
       },
       {
-        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Cabin|Cabin Condensed|Cabin SemiCondensed|JetBrains Mono))/i]",
-        "message": "Font not provided by the design system. Available: Cabin, Cabin Condensed, Cabin SemiCondensed, JetBrains Mono."
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Manrope|Cabin|Cabin Condensed|Cabin SemiCondensed|JetBrains Mono))/i]",
+        "message": "Font not provided by the design system. Available: Manrope, Cabin, Cabin Condensed, Cabin SemiCondensed, JetBrains Mono."
       },
       {
         "selector": "JSXOpeningElement[name.name='Arrow'] > JSXAttribute > JSXIdentifier[name!=/^(?:direction|size|color|key|ref|className|style|children)$/]",

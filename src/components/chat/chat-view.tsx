@@ -34,6 +34,27 @@ const SUGGESTIONS = [
   "Draft a reply to the last email from my professor",
 ];
 
+/**
+ * The chat transport surfaces a failed response as its raw body, which for
+ * this API is a JSON envelope. Show the sentence inside it rather than the
+ * envelope — presentation only, the error object itself is untouched.
+ */
+function errorText(error: Error): string {
+  try {
+    const parsed: unknown = JSON.parse(error.message);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { message?: unknown }).message === "string"
+    ) {
+      return (parsed as { message: string }).message;
+    }
+  } catch {
+    // Not JSON — the message is already a sentence.
+  }
+  return error.message;
+}
+
 function isApprovalPart(
   part: UIMessage["parts"][number],
 ): part is { type: "data-approval"; id?: string; data: ApprovalDataPart } {
@@ -48,7 +69,7 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
         size={48}
         icon={<Icon name="Automation" size={16} />}
       />
-      <div className="space-y-space-xxs">
+      <div className="max-w-md space-y-space-xxs">
         <h2 className="font-display text-title-lg">
           What can I take off your plate?
         </h2>
@@ -242,7 +263,7 @@ export function ChatView() {
             >
               <span className="flex items-start gap-space-xs">
                 <span className="min-w-0 flex-1 break-words">
-                  {error.message}
+                  {errorText(error)}
                 </span>
                 <Button variant="ghost" size="sm" onClick={clearError}>
                   Dismiss

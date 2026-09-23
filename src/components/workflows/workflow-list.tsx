@@ -81,7 +81,9 @@ export function WorkflowList({
                 icon={<Icon name={triggerIcon} size={16} />}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-display text-title-sm text-ink">
+                {/* Clamped rather than truncated: a blueprint's name is how
+                    you tell two schedules apart, and the rail is narrow. */}
+                <p className="line-clamp-2 font-display text-title-sm text-ink">
                   {workflow.title}
                 </p>
                 <p className="flex items-center gap-space-xs truncate text-caption text-muted">

@@ -102,6 +102,7 @@ export function Composer({
         </div>
 
         <Button
+          type="button"
           variant="primary"
           size="sm"
           disabled={disabled || (!busy && value.trim() === "")}

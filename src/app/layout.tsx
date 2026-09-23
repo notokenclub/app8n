@@ -37,15 +37,23 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <head>
-        {/* The design system's monospace face (logs, keys, code). The Cabin
-            families are self-hosted in tokens/fonts.css. */}
+        {/* Manrope is the product's UI face and JetBrains Mono its monospace;
+            both come from the Google Fonts CDN (no brand files were supplied
+            for either). Preconnecting shaves a round trip off first paint.
+            The Cabin families are self-hosted from /public/fonts. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin=""
+        />
         {/* The rule this disables is a pages-router heuristic: a <link> in the
             App Router's root layout is on every page, which is exactly what a
             brand font needs. */}
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         />
       </head>
       <body className="min-h-dvh bg-background text-foreground">

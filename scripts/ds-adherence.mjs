@@ -152,15 +152,31 @@ for (const file of files(SCAN_DIR)) {
         .replace(/\{[\s\S]*?\}/g, "{…}");
       if (entry.props) {
         for (const attr of attrs.matchAll(/(?:^|\s)([A-Za-z][\w-]*)=/g)) {
-          // Two documented carve-outs: ARIA labelling (a control the system
-          // renders as an icon has no other accessible name), and the native
-          // <input> attributes that make a password field a password field —
-          // the system's Input spreads them onto the element by construction.
+          // Two documented carve-outs, both required to keep behaviour that
+          // predates the design system:
+          //
+          //   * ARIA labelling — a control the system renders as an icon has
+          //     no other accessible name;
+          //   * the native attributes below, which `Button`, `IconButton` and
+          //     `Input` forward onto the underlying element through `...rest`
+          //     by construction: the button `type` (a bare <button> inside a
+          //     form defaults to submit), and the attributes that make a
+          //     password field a password field and let Enter submit it.
+          const forwarded = {
+            Button: ["type"],
+            IconButton: ["type"],
+            Input: [
+              "type",
+              "inputMode",
+              "autoComplete",
+              "spellCheck",
+              "onKeyDown",
+            ],
+          };
           const allowed =
             entry.props.has(attr[1]) ||
             attr[1].startsWith("aria-") ||
-            (name === "Input" &&
-              ["type", "autoComplete", "spellCheck"].includes(attr[1]));
+            (forwarded[name] ?? []).includes(attr[1]);
           if (!allowed) {
             report(file, line, entry.message, `<${name} ${attr[1]}=…>`);
           }

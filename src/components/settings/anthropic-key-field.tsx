@@ -90,12 +90,18 @@ export function AnthropicKeyField() {
           <Input
             label="API key"
             type="password"
+            inputMode="text"
             autoComplete="off"
             spellCheck={false}
             placeholder="sk-ant-…"
             value={value}
             icon={<Icon name="LockLocked" size={16} />}
             onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              // Enter submits from the field itself; the Save button is the
+              // same code path.
+              if (event.key === "Enter") submit();
+            }}
           />
         </div>
         <Button

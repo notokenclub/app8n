@@ -126,7 +126,7 @@ export function GoogleAccounts() {
           <ServiceGrid account={account} />
 
           {confirming === account.id ? (
-            <div className="flex gap-space-xs">
+            <div className="flex gap-space-xs [&>*]:flex-1">
               <Button
                 variant="primary"
                 size="sm"
@@ -163,27 +163,31 @@ export function GoogleAccounts() {
               </Button>
             </div>
           ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<Icon name="LogOut" size={16} />}
-              onClick={() => setConfirming(account.id)}
-            >
-              Disconnect
-            </Button>
+            <div className="flex [&>*]:flex-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Icon name="LogOut" size={16} />}
+                onClick={() => setConfirming(account.id)}
+              >
+                Disconnect
+              </Button>
+            </div>
           )}
         </div>
       ))}
 
-      <Button
-        variant={data?.accounts.length ? "secondary" : "primary"}
-        size="md"
-        disabled={data?.googleConfigured === false}
-        onClick={connect}
-        icon={<Icon name="Add" size={16} />}
-      >
-        {data?.accounts.length ? "Connect another account" : "Connect Google"}
-      </Button>
+      <div className="flex [&>*]:flex-1">
+        <Button
+          variant={data?.accounts.length ? "secondary" : "primary"}
+          size="md"
+          disabled={data?.googleConfigured === false}
+          onClick={connect}
+          icon={<Icon name="Add" size={16} />}
+        >
+          {data?.accounts.length ? "Connect another account" : "Connect Google"}
+        </Button>
+      </div>
     </div>
   );
 }

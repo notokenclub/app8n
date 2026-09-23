@@ -193,7 +193,7 @@ export function ApprovalCard({
           <Badge tone="primary">
             <span className="inline-flex items-center gap-space-xxs">
               <Icon name={display.icon} size={16} />
-              {description.title}
+              {display.active}
             </span>
           </Badge>
         </span>
@@ -271,7 +271,7 @@ export function ApprovalCard({
           disabled={resolve.isPending}
           onConfirm={() => submit(true)}
         />
-        <div className="flex gap-space-xs">
+        <div className="flex gap-space-xs [&>*]:flex-1">
           <Button
             variant="secondary"
             size="sm"

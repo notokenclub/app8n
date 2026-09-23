@@ -85,7 +85,7 @@ function TabBar({ pending }: { pending: number }) {
               <span className="relative flex items-center">
                 <Icon name={item.icon} size={16} />
                 {item.href === "/approvals" && pending > 0 && (
-                  <span className="absolute -top-sm -right-sm">
+                  <span className="absolute -top-space-xs -right-space-xs">
                     <NumberBadge count={pending} tone="primary" max={9} />
                   </span>
                 )}

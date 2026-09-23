@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useTheme } from "next-themes";
 import { Divider, Icon, Switch } from "@/ds";
 import { AnthropicKeyField } from "@/components/settings/anthropic-key-field";
@@ -28,7 +29,16 @@ function Section({
 
 export default function SettingsPage() {
   const { resolvedTheme, setTheme } = useTheme();
-  const charcoal = resolvedTheme === "dark";
+  // The resolved theme is only knowable in the browser, so the control renders
+  // in its default position until the component has mounted. Without this the
+  // server's markup and the first client render disagree whenever the stored
+  // theme is not the default, which React reports as a hydration mismatch.
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  const charcoal = mounted && resolvedTheme === "dark";
 
   return (
     <>
