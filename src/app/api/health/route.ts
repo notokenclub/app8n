@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isGoogleConfigured, isMockGoogle } from "@/lib/config";
-import { isAgentConfigured } from "@/lib/agent/model";
+import { isAgentConfiguredInEnv } from "@/lib/agent/model";
 import { checkEnvironment } from "@/lib/env";
 import { isNotifyConfigured } from "@/lib/notify";
 
@@ -16,7 +16,7 @@ export async function GET() {
   const checks: Record<string, boolean> = {
     database: false,
     vaultKey: Boolean(process.env.APP8N_ENCRYPTION_KEY?.trim()),
-    agentKey: isAgentConfigured(),
+    agentKey: isAgentConfiguredInEnv(),
     googleOAuth: isGoogleConfigured(),
     mockGoogle: isMockGoogle(),
     notifications: isNotifyConfigured(),

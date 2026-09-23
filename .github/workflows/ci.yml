@@ -28,6 +28,9 @@ jobs:
       - name: Mint a throwaway vault key
         run: echo "APP8N_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")" >> "$GITHUB_ENV"
 
+      # `typecheck` runs `next typegen` first: route and layout types are
+      # generated rather than committed, so on a clean checkout tsc would
+      # otherwise fail on LayoutProps and friends.
       - run: npm run typecheck
       - run: npm run lint
       - name: Design-system adherence

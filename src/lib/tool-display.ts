@@ -173,4 +173,5 @@ export const SERVICE_ICONS: Record<string, IconName> = {
   docs: "File",
   drive: "FolderOpen",
   tasks: "ListChecklist",
+  workflow: "DataFlow",
 };

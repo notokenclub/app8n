@@ -3,8 +3,10 @@
 import * as React from "react";
 import { useTheme } from "next-themes";
 import { Divider, Icon, Switch } from "@/ds";
-import { AnthropicKeyField } from "@/components/settings/anthropic-key-field";
+import { ModelKeyField } from "@/components/settings/model-key-field";
 import { GoogleAccounts } from "@/components/settings/google-accounts";
+import { GoogleConnectResult } from "@/components/settings/google-connect-result";
+import { PushNotifications } from "@/components/settings/push-notifications";
 import { PageHeader } from "@/components/shell/page-header";
 
 function Section({
@@ -43,6 +45,7 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" subtitle="Accounts, keys and the vault" />
+      <GoogleConnectResult />
 
       <div className="mx-auto w-full max-w-2xl flex-1 space-y-space-xl p-space-md">
         <Section
@@ -55,10 +58,19 @@ export default function SettingsPage() {
         <Divider tone="hairline" />
 
         <Section
-          title="Anthropic API key"
+          title="Model API key"
           description="The model behind the agent. Stored in the encrypted local vault."
         >
-          <AnthropicKeyField />
+          <ModelKeyField />
+        </Section>
+
+        <Divider tone="hairline" />
+
+        <Section
+          title="Notifications"
+          description="Where an approval gate reaches you when the app is closed."
+        >
+          <PushNotifications />
         </Section>
 
         <Divider tone="hairline" />

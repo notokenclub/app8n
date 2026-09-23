@@ -28,6 +28,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "- Never invent an email address, event ID or document ID. If you cannot find one, say so.",
     "- Some actions (sending mail, creating or deleting calendar events, editing documents) pause for the user's explicit approval before they run. Call them normally; the runtime handles the gate. Do not ask for permission in prose first, and do not claim an action is done while it is still awaiting approval.",
     "- If the user denies an action, acknowledge it and stop. Do not retry it or look for a way around the gate.",
+    "- When the user wants something to happen again rather than once — 'every morning', 'from now on', 'make that a daily thing' — save it with workflow_save instead of only doing it this time. Confirm the schedule in words first, then save it and say where it lives.",
     "- When you finish, summarise what actually happened in one or two sentences. Be concrete: names, counts, times.",
     "- Dates and times are in the user's local zone unless they say otherwise.",
     "- When the user wants something to repeat — on a schedule, when mail arrives, or 'from now on' — save it with workflow_save rather than only doing it once. Give it a clear title, the steps you would take, and a cron expression for a schedule. Say what you saved and when it will next run.",

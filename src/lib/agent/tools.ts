@@ -12,8 +12,9 @@ import {
   listWorkflows,
   saveWorkflow,
   setWorkflowStatus,
+  workflowDraftSchema,
 } from "@/lib/workflows/authoring";
-import { TRIGGER_TYPES, WORKFLOW_STATUSES } from "@/lib/db/schema";
+import { WORKFLOW_STATUSES } from "@/lib/db/schema";
 
 /**
  * `read`     — no side effects.
@@ -332,70 +333,30 @@ export const AGENT_TOOLS: AgentTool[] = [
     run: (args, ctx) => tasks.completeTask({ ...ctx, ...args }),
   }),
 
-  // ---------------------------------------------------------------------
-  // Core tools. These act on app8n itself rather than on Google, which is
-  // what turns "make that a daily thing" into a real automation instead of a
-  // promise the agent cannot keep. `service: "core"` means they are always in
-  // the toolset, even before a Google account is connected.
-  // ---------------------------------------------------------------------
-
   defineTool({
     name: "workflow_save",
     description:
-      "Save the current request as a repeatable automation (a blueprint), or update one by id. Use this when the user asks for something to happen on a schedule, when new mail arrives, or to be saved for later. Steps are the plan; a step with no tool is a judgement call the agent makes at run time.",
+      "Save the current request as a reusable automation, for when the user wants something to happen again — 'do that every morning', 'make this a daily thing', 'watch for these emails'. Describe the steps you would take; a step with no tool is one where you use your own judgement. Confirm the schedule with the user before saving.",
     service: "core",
+    // Local state the user owns, visible to nobody else. The actions the saved
+    // automation later performs are gated individually when it runs, which is
+    // where the human decision actually belongs.
     impact: "write",
-    // Creating something that will act unattended, on a schedule, is exactly
-    // the kind of decision the gate exists for — and the approval card lets
-    // the user correct the schedule before it is saved.
-    requiresApproval: true,
-    parameters: z.object({
-      id: z
-        .string()
-        .optional()
-        .describe("Existing workflow id, when editing rather than creating"),
-      title: z.string().describe("Short name, sentence case"),
-      description: z
-        .string()
-        .optional()
-        .describe("What the automation should do, in the user's own terms"),
-      triggerType: z
-        .enum(TRIGGER_TYPES)
-        .describe(
-          "'cron' for a schedule, 'gmail_poll' for new mail, 'webhook' for an external call, 'manual' to run on demand",
-        ),
-      cronExpression: z
-        .string()
-        .optional()
-        .describe("Five-field cron, required when triggerType is 'cron'"),
-      steps: z
-        .array(
-          z.object({
-            label: z.string(),
-            tool: z
-              .string()
-              .optional()
-              .describe("Registry tool name, when the step maps onto one"),
-            description: z.string().optional(),
-          }),
-        )
-        .optional(),
-      isAgentic: z
-        .boolean()
-        .optional()
-        .describe(
-          "True when the agent should adapt the plan; false to run the steps literally",
-        ),
-    }),
+    parameters: workflowDraftSchema,
     run: async (args, ctx) => {
-      const saved = await saveWorkflow({ ...args, userId: ctx.userId });
+      const workflow = await saveWorkflow({
+        userId: ctx.userId,
+        draft: args,
+        knownTools: agentToolNames(),
+      });
+
       return {
-        id: saved.id,
-        title: saved.title,
-        status: saved.status,
-        triggerType: saved.triggerType,
-        cronExpression: saved.cronExpression,
-        steps: saved.nodesJson.length,
+        id: workflow.id,
+        title: workflow.title,
+        status: workflow.status,
+        triggerType: workflow.triggerType,
+        cronExpression: workflow.cronExpression,
+        stepCount: workflow.nodesJson.length,
       };
     },
   }),
@@ -403,7 +364,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   defineTool({
     name: "workflow_list",
     description:
-      "List the user's saved automations with their id, status and schedule. Call this before editing, pausing or deleting one so the right id is used.",
+      "List the user's saved automations with their id, status and schedule. Call this before editing, pausing or deleting one, so the right automation is acted on.",
     service: "core",
     impact: "read",
     parameters: z.object({}),
@@ -444,7 +405,8 @@ export const AGENT_TOOLS: AgentTool[] = [
       "Delete a saved automation permanently, along with its run history. Prefer pausing unless the user asks for it to be removed.",
     service: "core",
     impact: "write",
-    // Unlike pausing, this cannot be undone, so it goes through the gate.
+    // Saving is reversible and gates when it runs; deleting destroys the
+    // automation and its history outright, which is what the gate is for.
     requiresApproval: true,
     parameters: z.object({ id: z.string() }),
     run: async (args, ctx) => {
@@ -455,6 +417,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   }),
 ];
 
+
 export const TOOLS_BY_NAME: Record<string, AgentTool> = Object.fromEntries(
   AGENT_TOOLS.map((tool) => [tool.name, tool]),
 );
@@ -463,6 +426,21 @@ export function getTool(name: string): AgentTool {
   const tool = TOOLS_BY_NAME[name];
   if (!tool) throw new Error(`Unknown tool: ${name}`);
   return tool;
+}
+
+/** The registered tool names, for callers that validate a reference to one
+ * without needing the definitions themselves. */
+export function agentToolNames(): ReadonlySet<string> {
+  return new Set(Object.keys(TOOLS_BY_NAME));
+}
+
+/**
+ * Lookup that reports absence instead of throwing, for callers that turn an
+ * unknown action into a handled error. {@link getTool} throws, which on the
+ * approval path would surface a crash where a 422 belongs.
+ */
+export function findTool(name: string): AgentTool | undefined {
+  return TOOLS_BY_NAME[name];
 }
 
 export function requiresApproval(name: string): boolean {

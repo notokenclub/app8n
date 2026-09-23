@@ -5,8 +5,10 @@ import { toast } from "sonner";
 import { Badge, Button, Icon, SectionMessage, TextBadge } from "@/ds";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  useCheckAccount,
   useDisconnectAccount,
   useGoogleAccounts,
+  type AccountHealth,
   type LinkedAccount,
 } from "@/hooks/use-settings";
 import { apiUrl } from "@/lib/client-api";
@@ -42,9 +44,65 @@ function ServiceGrid({ account }: { account: LinkedAccount }) {
   );
 }
 
+
+/**
+ * Result of a live check.
+ *
+ * Mock mode is called out explicitly: a green tick that only proves the
+ * fixtures work would be exactly the false confidence this check exists to
+ * remove.
+ */
+function HealthReadout({ health }: { health: AccountHealth }) {
+  const failed = health.services.filter((probe) => probe.status === "failed");
+
+  return (
+    <SectionMessage
+      appearance={health.ok ? (health.mock ? "warning" : "success") : "danger"}
+      title={
+        health.ok
+          ? health.mock
+            ? "Mock connectors responded — this proves nothing about Google"
+            : "Live check passed"
+          : health.needsReconnect
+            ? "Reconnect needed"
+            : "Live check failed"
+      }
+      IconComponent={Icon}
+    >
+      {health.error && <span className="block">{health.error}</span>}
+
+      {failed.length > 0 && (
+        <ul className="space-y-space-xxs">
+          {failed.map((probe) => (
+            <li key={probe.service}>
+              <span className="font-medium">
+                {SERVICE_LABELS[probe.service as keyof typeof SERVICE_LABELS] ??
+                  probe.service}
+                :
+              </span>{" "}
+              {probe.error}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {health.ok && (
+        <span className="block">
+          Checked{" "}
+          {health.services.filter((probe) => probe.status === "ok").length} of{" "}
+          {health.services.length} granted services. Docs and Sheets have no
+          listing call to probe without a file id.
+        </span>
+      )}
+    </SectionMessage>
+  );
+}
+
 export function GoogleAccounts() {
   const { data, isLoading } = useGoogleAccounts();
   const disconnect = useDisconnectAccount();
+  const check = useCheckAccount();
+  const [health, setHealth] = React.useState<Record<string, AccountHealth>>({});
   const [confirming, setConfirming] = React.useState<string | null>(null);
 
   const connect = () => {
@@ -124,6 +182,43 @@ export function GoogleAccounts() {
           </div>
 
           <ServiceGrid account={account} />
+
+          {health[account.id] && <HealthReadout health={health[account.id]} />}
+
+          <div className="flex [&>*]:flex-1">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={check.isPending}
+              icon={
+                <Icon
+                  name={
+                    check.isPending && check.variables === account.id
+                      ? "Clock"
+                      : "CheckCircle"
+                  }
+                  size={16}
+                />
+              }
+              onClick={() =>
+                check.mutate(account.id, {
+                  onSuccess: (result) =>
+                    setHealth((current) => ({
+                      ...current,
+                      [account.id]: result,
+                    })),
+                  onError: (error) =>
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Could not check the connection.",
+                    ),
+                })
+              }
+            >
+              Test connection
+            </Button>
+          </div>
 
           {confirming === account.id ? (
             <div className="flex gap-space-xs [&>*]:flex-1">

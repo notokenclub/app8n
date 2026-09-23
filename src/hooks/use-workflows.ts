@@ -51,6 +51,18 @@ export function useWorkflows() {
   });
 }
 
+export function useDeleteWorkflow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ id: string; deleted: boolean }>(
+        `/api/workflows?id=${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: WORKFLOWS_KEY }),
+  });
+}
+
 export function useSetWorkflowStatus() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -67,29 +79,14 @@ export function useRunWorkflow() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<{ id: string; started: boolean }>(
-        `/api/workflows/${id}/run`,
-        { method: "POST" },
-      ),
+      apiFetch<{ id: string; started: boolean }>(`/api/workflows/${id}/run`, {
+        method: "POST",
+      }),
     onSuccess: () => {
       // A manual run can both change `lastRunAt` and open an approval gate.
       queryClient.invalidateQueries({ queryKey: WORKFLOWS_KEY });
       queryClient.invalidateQueries({ queryKey: EXECUTIONS_KEY });
       queryClient.invalidateQueries({ queryKey: APPROVALS_KEY });
-    },
-  });
-}
-
-export function useDeleteWorkflow() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ id: string; deleted: boolean }>(`/api/workflows/${id}`, {
-        method: "DELETE",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: WORKFLOWS_KEY });
-      queryClient.invalidateQueries({ queryKey: EXECUTIONS_KEY });
     },
   });
 }

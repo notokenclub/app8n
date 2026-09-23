@@ -3,6 +3,8 @@
 import "./selftest-env";
 
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -29,28 +31,26 @@ import { executeApprovedAction } from "../src/lib/agent/execute-approved";
 import { runAgent } from "../src/lib/agent/orchestrator";
 import { getMockStore, resetMockStore } from "../src/lib/google/mock";
 import {
-  GMAIL_POLL_INTERVAL_MS,
-  isValidCron,
-  selectDueWorkflows,
-} from "../src/lib/scheduler/jobs";
-import {
   deleteWorkflow,
   listWorkflows,
-  saveWorkflow,
+  saveWorkflow as saveWorkflowDraft,
   setWorkflowStatus,
-  WorkflowValidationError,
+  WorkflowAuthoringError,
 } from "../src/lib/workflows/authoring";
+import { agentToolNames } from "../src/lib/agent/tools";
 import {
   ensureWebhookSecret,
   getWebhookSecret,
   revokeWebhookSecret,
   webhookSecretMatches,
 } from "../src/lib/workflows/webhooks";
-import {
-  failStaleExecutions,
-  STALE_RUN_MS,
-} from "../src/lib/agent/execution";
+import { failStaleExecutions, STALE_RUN_MS } from "../src/lib/agent/execution";
 import { checkEnvironment } from "../src/lib/env";
+import {
+  GMAIL_POLL_INTERVAL_MS,
+  isValidCron,
+  selectDueWorkflows,
+} from "../src/lib/scheduler/jobs";
 
 const usage = {
   inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
@@ -311,7 +311,11 @@ check("approving executes the action through the runtime proxy", async () => {
   const resolved = await resolveApproval({ approvalId, approved: true });
   assert.equal(resolved.status, "APPROVED");
 
-  const executed = await executeApprovedAction(resolved);
+  // Approving also hands the run back its parked conversation, so the model
+  // is scripted here too — it wraps up rather than calling anything further.
+  const executed = await executeApprovedAction(resolved, {
+    model: scriptedModel([textStep("Sent the appeal.")]),
+  });
   assert.ok(executed.executed, `expected send to run: ${executed.error ?? ""}`);
 
   const sent = sentMessages();
@@ -480,83 +484,16 @@ function workflowFixture(overrides: Partial<Workflow>): Workflow {
   } as Workflow;
 }
 
-// --- Authoring an automation from a conversation ---------------------------
+// --- Ownership, webhooks, abandoned runs and the deployment preflight ------
 
-check("a saved automation lands active, with its plan intact", async () => {
-  const saved = await saveWorkflow({
-    userId,
-    title: "Weekday briefing",
-    description: "Summarise the day every weekday morning",
-    triggerType: "cron",
-    cronExpression: "0 7 * * 1-5",
-    steps: [
-      { label: "List today's meetings", tool: "calendar_list_events" },
-      { label: "Decide what matters" },
-    ],
-  });
-
-  assert.equal(saved.status, "active", "a saved automation must be live");
-  assert.equal(saved.cronExpression, "0 7 * * 1-5");
-  assert.equal(saved.nodesJson.length, 2);
-  assert.equal(saved.edgesJson.length, 1, "steps must be chained");
-
-  // The worker reads this column to build the run instruction, so a step with
-  // no tool has to survive the round trip as a judgement step.
-  const [first, second] = saved.nodesJson as Record<string, unknown>[];
-  assert.equal(first.tool, "calendar_list_events");
-  assert.equal(second.tool, undefined);
-});
-
-check("a schedule that cannot fire is refused, not saved", async () => {
-  await assert.rejects(
-    () =>
-      saveWorkflow({
-        userId,
-        title: "Broken schedule",
-        triggerType: "cron",
-        cronExpression: "not a cron",
-      }),
-    WorkflowValidationError,
-  );
-
-  await assert.rejects(
-    () => saveWorkflow({ userId, title: "No schedule", triggerType: "cron" }),
-    WorkflowValidationError,
-    "a cron workflow with no expression would never run",
-  );
-
-  await assert.rejects(
-    () =>
-      saveWorkflow({
-        userId,
-        title: "Imaginary tool",
-        triggerType: "manual",
-        steps: [{ label: "Do the thing", tool: "gmail_send_telepathy" }],
-      }),
-    WorkflowValidationError,
-    "a step naming a tool that does not exist must not be saved",
-  );
-});
-
-check("editing keeps the id and replaces the plan", async () => {
-  const created = await saveWorkflow({
-    userId,
-    title: "Draft name",
-    triggerType: "manual",
-    steps: [{ label: "One" }],
-  });
-
-  const edited = await saveWorkflow({
-    userId,
-    id: created.id,
-    title: "Better name",
-    triggerType: "manual",
-    steps: [{ label: "One" }, { label: "Two" }],
-  });
-
-  assert.equal(edited.id, created.id);
-  assert.equal(edited.title, "Better name");
-  assert.equal(edited.nodesJson.length, 2);
+const draftOf = (over: Record<string, unknown> = {}) => ({
+  title: "Owned automation",
+  description: "Something this user saved",
+  triggerType: "manual" as const,
+  steps: [],
+  isAgentic: true,
+  status: "active" as const,
+  ...over,
 });
 
 check("another user's automation cannot be edited, paused or deleted", async () => {
@@ -565,25 +502,25 @@ check("another user's automation cannot be edited, paused or deleted", async () 
     .values({ email: `stranger-${Date.now()}@app8n.local` })
     .returning();
 
-  const mine = await saveWorkflow({
+  const mine = await saveWorkflowDraft({
     userId,
-    title: "Mine alone",
-    triggerType: "manual",
+    draft: draftOf({ title: "Mine alone" }),
+    knownTools: agentToolNames(),
   });
 
   await assert.rejects(
     () =>
-      saveWorkflow({
+      saveWorkflowDraft({
         userId: stranger.id,
-        id: mine.id,
-        title: "Hijacked",
-        triggerType: "manual",
+        workflowId: mine.id,
+        draft: draftOf({ title: "Hijacked" }),
+        knownTools: agentToolNames(),
       }),
-    WorkflowValidationError,
+    WorkflowAuthoringError,
   );
   await assert.rejects(
     () => setWorkflowStatus(stranger.id, mine.id, "paused"),
-    WorkflowValidationError,
+    WorkflowAuthoringError,
   );
   assert.equal(
     await deleteWorkflow(stranger.id, mine.id),
@@ -600,10 +537,10 @@ check("another user's automation cannot be edited, paused or deleted", async () 
 });
 
 check("deleting removes the automation from the owner's list", async () => {
-  const doomed = await saveWorkflow({
+  const doomed = await saveWorkflowDraft({
     userId,
-    title: "Temporary",
-    triggerType: "manual",
+    draft: draftOf({ title: "Temporary" }),
+    knownTools: agentToolNames(),
   });
 
   assert.equal(await deleteWorkflow(userId, doomed.id), true);
@@ -614,13 +551,11 @@ check("deleting removes the automation from the owner's list", async () => {
   );
 });
 
-// --- Webhook triggers ------------------------------------------------------
-
 check("a webhook secret is minted once, stored encrypted and verified", async () => {
-  const hook = await saveWorkflow({
+  const hook = await saveWorkflowDraft({
     userId,
-    title: "Inbound lead",
-    triggerType: "webhook",
+    draft: draftOf({ title: "Inbound lead", triggerType: "webhook" }),
+    knownTools: agentToolNames(),
   });
 
   const secret = await ensureWebhookSecret(userId, hook.id);
@@ -653,8 +588,6 @@ check("a webhook secret is minted once, stored encrypted and verified", async ()
   );
 });
 
-// --- Runs that outlive their process ---------------------------------------
-
 check("a run whose process died is closed by the sweep", async () => {
   const [ghost] = await db
     .insert(executionLogs)
@@ -668,11 +601,15 @@ check("a run whose process died is closed by the sweep", async () => {
 
   const [fresh] = await db
     .insert(executionLogs)
-    .values({ userId, trigger: "chat", status: "running", startedAt: new Date() })
+    .values({
+      userId,
+      trigger: "chat",
+      status: "running",
+      startedAt: new Date(),
+    })
     .returning();
 
-  const closed = await failStaleExecutions();
-  assert.ok(closed >= 1);
+  assert.ok((await failStaleExecutions()) >= 1);
 
   const [ghostAfter] = await db
     .select()
@@ -686,6 +623,12 @@ check("a run whose process died is closed by the sweep", async () => {
     .from(executionLogs)
     .where(eq(executionLogs.id, fresh.id));
   assert.equal(freshAfter.status, "running", "a live run must not be swept");
+
+  // Leave no open row behind for the checks that count runs.
+  await db
+    .update(executionLogs)
+    .set({ status: "cancelled", finishedAt: new Date() })
+    .where(eq(executionLogs.id, fresh.id));
 });
 
 check("a run that fails before its first step is still closed out", async () => {
@@ -714,19 +657,18 @@ check("a run that fails before its first step is still closed out", async () => 
     model: exploding,
   }).catch(() => null);
 
-  const after = await db
-    .select()
-    .from(executionLogs)
-    .where(eq(executionLogs.userId, userId));
-  const created = after.filter((row) => !before.has(row.id));
+  const created = (
+    await db
+      .select()
+      .from(executionLogs)
+      .where(eq(executionLogs.userId, userId))
+  ).filter((row) => !before.has(row.id));
 
   assert.equal(created.length, 1, "the run must be recorded");
   assert.equal(created[0].status, "failed", "and closed, not left running");
   assert.match(created[0].errorTrace ?? "", /provider unreachable/);
   assert.equal(result?.status, "failed", "the caller is told it failed");
 });
-
-// --- Deployment preflight --------------------------------------------------
 
 check("production refuses to start unprotected or unconfigured", () => {
   const base = {
@@ -736,7 +678,11 @@ check("production refuses to start unprotected or unconfigured", () => {
     APP8N_ACCESS_TOKEN: "x".repeat(32),
   } as NodeJS.ProcessEnv;
 
-  assert.equal(checkEnvironment(base).errors.length, 0, "a complete production env passes");
+  assert.equal(
+    checkEnvironment(base).errors.length,
+    0,
+    "a complete production env passes",
+  );
 
   const noToken = checkEnvironment({ ...base, APP8N_ACCESS_TOKEN: undefined });
   assert.ok(
@@ -744,82 +690,34 @@ check("production refuses to start unprotected or unconfigured", () => {
     "an exposed backend with no access token must be refused",
   );
 
-  const loopback = checkEnvironment({ ...base, APP_URL: "http://localhost:3000" });
+  const loopback = checkEnvironment({
+    ...base,
+    APP_URL: "http://localhost:3000",
+  });
   assert.ok(
     loopback.errors.some((issue) => issue.variable === "APP_URL"),
     "a production APP_URL pointing at localhost breaks OAuth and webhooks",
   );
 
-  const badKey = checkEnvironment({ ...base, APP8N_ENCRYPTION_KEY: "tooshort" });
+  const badKey = checkEnvironment({
+    ...base,
+    APP8N_ENCRYPTION_KEY: "tooshort",
+  });
   assert.ok(
     badKey.errors.some((issue) => issue.variable === "APP8N_ENCRYPTION_KEY"),
     "a malformed vault key must be caught at boot",
   );
 
-  const shortToken = checkEnvironment({ ...base, APP8N_ACCESS_TOKEN: "short" });
-  assert.ok(shortToken.errors.length > 0, "a guessable token is not protection");
+  assert.ok(
+    checkEnvironment({ ...base, APP8N_ACCESS_TOKEN: "short" }).errors.length > 0,
+    "a guessable token is not protection",
+  );
 
   // Development stays permissive: half-configured is the normal state there.
-  assert.equal(checkEnvironment({ NODE_ENV: "development" } as NodeJS.ProcessEnv).errors.length, 0);
-});
-
-check("'make that a daily thing' saves an automation, through the gate", async () => {
-  const model = scriptedModel([
-    toolCallStep("call-save-1", "workflow_save", {
-      title: "Morning mail summary",
-      description: "Summarise unread mail every weekday at 8am",
-      triggerType: "cron",
-      cronExpression: "0 8 * * 1-5",
-      steps: [
-        { label: "Search unread mail", tool: "gmail_search_messages" },
-        { label: "Summarise what matters" },
-      ],
-    }),
-    textStep("Saved."),
-  ]);
-
-  const before = (await listWorkflows(userId)).length;
-
-  const run = await runAgent({
-    userId,
-    trigger: "chat",
-    messages: [{ role: "user", content: "summarise my unread mail every weekday at 8am" }],
-    model,
-  });
-
-  // Creating something that will act unattended is gated, so nothing is saved
-  // until a human says yes.
-  assert.equal(run.status, "awaiting_approval", "saving an automation must gate");
   assert.equal(
-    (await listWorkflows(userId)).length,
-    before,
-    "no workflow may exist before the gate is approved",
-  );
-
-  const approvalId = run.approvals[0].approvalRequestId;
-  const pending = await listPendingApprovals(userId);
-  assert.ok(
-    pending.some((row) => row.id === approvalId),
-    "the gate must be listed as pending",
-  );
-
-  const approved = await resolveApproval({ approvalId, approved: true });
-  const result = await executeApprovedAction(approved);
-  assert.equal(result.executed, true, result.error);
-
-  const saved = (await listWorkflows(userId)).find(
-    (row) => row.title === "Morning mail summary",
-  );
-  assert.ok(saved, "the automation must exist after approval");
-  assert.equal(saved!.status, "active");
-  assert.equal(saved!.cronExpression, "0 8 * * 1-5");
-  assert.equal(saved!.triggerType, "cron");
-  assert.equal(saved!.nodesJson.length, 2, "the plan must be stored");
-
-  // And the scheduler must recognise it as due work rather than ignoring it.
-  assert.ok(
-    isValidCron(saved!.cronExpression!),
-    "a saved schedule must be one the worker can fire",
+    checkEnvironment({ NODE_ENV: "development" } as NodeJS.ProcessEnv).errors
+      .length,
+    0,
   );
 });
 
@@ -898,6 +796,696 @@ check("a scheduled run is attributed to its workflow", async () => {
   });
   assert.equal(row!.workflowId, workflow.id);
   assert.equal(row!.trigger, "cron");
+});
+
+// --- Workflow authoring ----------------------------------------------------
+
+check("authoring rejects an invalid cron expression", async () => {
+  const { validateDraft, WorkflowAuthoringError } = await import(
+    "../src/lib/workflows/authoring"
+  );
+  const { agentToolNames } = await import("../src/lib/agent/tools");
+
+  assert.throws(
+    () =>
+      validateDraft(
+        {
+          title: "Nightly",
+          description: "Runs nightly.",
+          triggerType: "cron",
+          cronExpression: "not a cron",
+          steps: [],
+          isAgentic: true,
+          status: "active",
+        },
+        agentToolNames(),
+      ),
+    WorkflowAuthoringError,
+  );
+});
+
+check("authoring rejects a step naming an unknown tool", async () => {
+  // Fails closed for the same reason the approval lookup does: a step calling
+  // a tool that does not exist would render in the canvas and silently do
+  // nothing on every run.
+  const { validateDraft, WorkflowAuthoringError } = await import(
+    "../src/lib/workflows/authoring"
+  );
+  const { agentToolNames } = await import("../src/lib/agent/tools");
+
+  assert.throws(
+    () =>
+      validateDraft(
+        {
+          title: "Bogus",
+          description: "Calls a tool that does not exist.",
+          triggerType: "manual",
+          steps: [{ label: "Send it", tool: "gmail_send_telegram" }],
+          isAgentic: true,
+          status: "active",
+        },
+        agentToolNames(),
+      ),
+    WorkflowAuthoringError,
+  );
+});
+
+check("a saved workflow becomes a plan the scheduler reads back", async () => {
+  // The `is_agentic` lesson, enforced: authoring writes the same nodes the
+  // canvas draws and the worker renders into its run instruction, so the two
+  // cannot describe different automations.
+  const { saveWorkflow } = await import("../src/lib/workflows/authoring");
+  const { agentToolNames } = await import("../src/lib/agent/tools");
+
+  const workflow = await saveWorkflow({
+    userId,
+    knownTools: agentToolNames(),
+    draft: {
+      title: "Morning briefing",
+      description: "Summarise the day ahead.",
+      triggerType: "cron",
+      cronExpression: "0 7 * * 1-5",
+      steps: [
+        { label: "Check calendar", tool: "calendar_list_events" },
+        { label: "Decide what matters" },
+      ],
+      isAgentic: true,
+      status: "active",
+    },
+  });
+
+  assert.equal(workflow.nodesJson.length, 2);
+  assert.equal(workflow.edgesJson.length, 1);
+  assert.equal(workflow.cronExpression, "0 7 * * 1-5");
+
+  const { buildRunInstruction } = await import("../src/lib/scheduler/worker");
+  const instruction = buildRunInstruction(workflow);
+  assert.match(instruction, /Check calendar/);
+  assert.match(instruction, /Decide what matters/);
+  assert.match(instruction, /deviate/, "an agentic plan is advisory");
+});
+
+check("changing a trigger away from cron clears its schedule", async () => {
+  const { saveWorkflow } = await import("../src/lib/workflows/authoring");
+  const { agentToolNames } = await import("../src/lib/agent/tools");
+
+  const base = {
+    title: "Was scheduled",
+    description: "Started life on a cron.",
+    steps: [],
+    isAgentic: true,
+    status: "active" as const,
+  };
+
+  const created = await saveWorkflow({
+    userId,
+    knownTools: agentToolNames(),
+    draft: { ...base, triggerType: "cron", cronExpression: "0 9 * * *" },
+  });
+
+  const updated = await saveWorkflow({
+    userId,
+    workflowId: created.id,
+    knownTools: agentToolNames(),
+    draft: { ...base, triggerType: "manual" },
+  });
+
+  // A stale expression left behind would resurrect the old schedule the next
+  // time someone switched the trigger back.
+  assert.equal(updated.cronExpression, null);
+});
+
+check("saving a workflow is not gated, but unknown tools still are", async () => {
+  const { requiresApproval } = await import("../src/lib/agent/tools");
+  // Local state the user owns is not an external action.
+  assert.equal(requiresApproval("workflow_save"), false);
+  // The fail-closed default must survive the new tool being added.
+  assert.equal(requiresApproval("totally_made_up_tool"), true);
+});
+
+// --- Run history -----------------------------------------------------------
+
+check("run history is scoped to its owner and ordered newest first", async () => {
+  const { listExecutions, getExecutionForUser } = await import(
+    "../src/lib/agent/execution"
+  );
+
+  const [stranger] = await db
+    .insert(users)
+    .values({ email: `stranger-${Date.now()}@app8n.local` })
+    .returning();
+
+  const [theirs] = await db
+    .insert(executionLogs)
+    .values({ userId: stranger.id, trigger: "chat", status: "success" })
+    .returning();
+
+  const mine = await listExecutions(userId);
+  assert.ok(mine.length > 0, "the earlier checks recorded runs");
+  assert.ok(
+    !mine.some((row) => row.execution.id === theirs.id),
+    "another user's run must not appear",
+  );
+
+  const times = mine.map((row) => row.execution.createdAt.getTime());
+  assert.deepEqual(
+    times,
+    [...times].sort((a, b) => b - a),
+    "newest first",
+  );
+
+  // An id belonging to someone else must miss rather than leak.
+  assert.equal(await getExecutionForUser(theirs.id, userId), undefined);
+});
+
+check("a run trace is retrievable and carries its steps", async () => {
+  const { getExecutionForUser } = await import("../src/lib/agent/execution");
+
+  const withSteps = (
+    await db.select().from(executionLogs).where(eq(executionLogs.userId, userId))
+  ).find((row) => row.stepsJson.length > 0);
+
+  assert.ok(withSteps, "earlier checks produced a run with steps");
+  const found = await getExecutionForUser(withSteps.id, userId);
+  assert.ok(found);
+  assert.deepEqual(found.execution.stepsJson, withSteps.stepsJson);
+});
+
+// --- Push notifications ----------------------------------------------------
+
+check("re-registering a device does not duplicate it", async () => {
+  // APNs and FCM reissue the same token to a reinstalled app; a second row
+  // would deliver every approval to that phone twice.
+  const { registerDevice, listDevices } = await import(
+    "../src/lib/push/devices"
+  );
+
+  await registerDevice({ userId, platform: "ios", token: "token-abc-123" });
+  await registerDevice({ userId, platform: "ios", token: "token-abc-123" });
+
+  const devices = await listDevices(userId);
+  assert.equal(
+    devices.filter((device) => device.token === "token-abc-123").length,
+    1,
+  );
+});
+
+check("push is skipped, not failed, when no provider is configured", async () => {
+  const { notifyApprovalRequired } = await import("../src/lib/push/dispatch");
+  const previous = process.env.APP8N_FCM_SERVICE_ACCOUNT;
+  delete process.env.APP8N_FCM_SERVICE_ACCOUNT;
+
+  try {
+    const report = await notifyApprovalRequired(userId, {
+      approvalRequestId: "a1",
+      executionId: "e1",
+      toolCallId: "t1",
+      toolName: "gmail_send_email",
+      summary: "Send an email",
+      parameters: {},
+    });
+    // A missing push provider must never fail the run that raised the gate.
+    assert.equal(report.skipped, "not_configured");
+    assert.equal(report.failed, 0);
+  } finally {
+    if (previous !== undefined) {
+      process.env.APP8N_FCM_SERVICE_ACCOUNT = previous;
+    }
+  }
+});
+
+// --- Mobile deep link ------------------------------------------------------
+
+check("deep-link registration is correct and idempotent", async () => {
+  const { schemeFrom, patchInfoPlist, patchAndroidManifest } = await import(
+    "./register-deep-link"
+  );
+
+  assert.equal(schemeFrom("app8n://auth/callback"), "app8n");
+
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+\t<key>CFBundleName</key>
+\t<string>app8n</string>
+</dict>
+</plist>`;
+
+  const first = patchInfoPlist(plist, "app8n");
+  assert.equal(first.changed, true);
+  assert.match(first.contents, /<key>CFBundleURLSchemes<\/key>/);
+  assert.match(first.contents, /<string>app8n<\/string>/);
+  // Reapplied on every `cap sync`, so a second pass must be a no-op.
+  assert.equal(patchInfoPlist(first.contents, "app8n").changed, false);
+
+  const manifest = `<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>`;
+
+  const patched = patchAndroidManifest(manifest, "app8n");
+  assert.equal(patched.changed, true);
+  assert.match(patched.contents, /android:scheme="app8n"/);
+  assert.match(patched.contents, /android\.intent\.category\.BROWSABLE/);
+  assert.equal(patchAndroidManifest(patched.contents, "app8n").changed, false);
+});
+
+// --- Google connection health ---------------------------------------------
+
+check("a health check reports mock mode rather than claiming a live pass", async () => {
+  // The whole point of the check is telling "verified against Google" apart
+  // from "verified against fixtures"; a green tick that conflated them would
+  // be the false confidence it exists to remove.
+  const { checkAccountHealth } = await import("../src/lib/google/health");
+  const { accounts } = await import("../src/lib/db/schema");
+
+  const [account] = await db
+    .insert(accounts)
+    .values({
+      userId,
+      provider: "google",
+      providerAccountId: `sub-${Date.now()}`,
+      email: "health@app8n.local",
+      scopes: [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/calendar",
+      ],
+    })
+    .returning();
+
+  const health = await checkAccountHealth(userId, account.id);
+  assert.equal(health.mock, true);
+  assert.equal(health.ok, true);
+  assert.deepEqual(
+    health.services.map((probe) => probe.service).sort(),
+    ["calendar", "gmail"],
+  );
+});
+
+check("an approved run resumes its remaining steps", async () => {
+  // `messagesJson` exists to make a run resumable across an approval pause —
+  // a job can park at 7am and continue after a decision at lunchtime. Without
+  // this the approved call would fire and the rest of the plan would be
+  // silently abandoned, leaving the column as state nothing reads.
+  resetMockStore();
+
+  const parked = await runAgent({
+    userId,
+    trigger: "cron",
+    services: ["gmail", "tasks"],
+    messages: [{ role: "user", content: "Email the dean, then log a task." }],
+    model: scriptedModel([
+      toolCallStep("send-1", "gmail_send_email", {
+        to: "dean@university.edu",
+        subject: "Attendance appeal",
+        body: "Please review.",
+      }),
+    ]),
+  });
+
+  assert.equal(parked.status, "awaiting_approval");
+  assert.equal(sentMessages().length, 0, "nothing sent before approval");
+
+  const [gate] = await db
+    .select()
+    .from(approvalRequests)
+    .where(eq(approvalRequests.executionId, parked.executionId));
+
+  const approved = await resolveApproval({
+    approvalId: gate.id,
+    approved: true,
+  });
+
+  // The resumed leg files the follow-up task the original plan called for.
+  const result = await executeApprovedAction(approved, {
+    model: scriptedModel([
+      toolCallStep("task-1", "tasks_create", { title: "Chase the dean" }),
+      textStep("Sent the appeal and logged a follow-up."),
+    ]),
+  });
+
+  assert.equal(result.executed, true);
+  assert.equal(sentMessages().length, 1, "the approved email actually sent");
+
+  const row = await db.query.executionLogs.findFirst({
+    where: eq(executionLogs.id, parked.executionId),
+  });
+
+  // One continuous run, not a stub plus an orphan.
+  assert.equal(row!.status, "success");
+  assert.ok(
+    row!.stepsJson.some(
+      (step) => step.kind === "tool_call" && step.toolName === "tasks_create",
+    ),
+    "the run continued past the gate",
+  );
+  assert.equal(
+    row!.stepsJson.filter(
+      (step) => step.kind === "tool_call" && step.toolName === "gmail_send_email",
+    ).length,
+    1,
+    "the approved call must not be replayed by the resumed run",
+  );
+});
+
+// --- Model providers ---------------------------------------------------------
+
+/** Runs `body` with the given env vars applied, restoring them afterwards. */
+async function withEnv(
+  vars: Record<string, string | undefined>,
+  body: () => Promise<void>,
+): Promise<void> {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(vars)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    await body();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+check("the provider is auto-detected from whichever key exists", async () => {
+  // Saving a Gemini key in Settings has to be enough on its own. Requiring an
+  // environment variable as well would mean the UI accepted a key that never
+  // took effect — the same dead-config trap as the unread OPENAI_API_KEY that
+  // sat in .env.example while nothing read it.
+  const { activeProvider, setModelKey, clearModelKey } = await import(
+    "../src/lib/agent/model-key"
+  );
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+    },
+    async () => {
+      // Nothing anywhere: fall back rather than throw, so Settings can render.
+      assert.equal((await activeProvider(userId)).id, "anthropic");
+
+      await setModelKey(userId, PROVIDERS.google, "AIzaTestKey123");
+      assert.equal((await activeProvider(userId)).id, "google");
+
+      await clearModelKey(userId, PROVIDERS.google);
+      assert.equal((await activeProvider(userId)).id, "anthropic");
+    },
+  );
+});
+
+check("an explicit provider choice overrides auto-detection", async () => {
+  const { activeProvider } = await import("../src/lib/agent/model-key");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: "google",
+      ANTHROPIC_API_KEY: "sk-ant-present",
+      GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+    },
+    async () => {
+      // Named explicitly, so it wins even though only Anthropic has a key.
+      assert.equal((await activeProvider(userId)).id, "google");
+    },
+  );
+});
+
+check("an unknown provider name fails loudly", async () => {
+  const { configuredProvider } = await import("../src/lib/agent/providers");
+
+  await withEnv({ APP8N_MODEL_PROVIDER: "gpt5" }, async () => {
+    // Silently falling back would strand the user on a provider they did not
+    // choose, with no clue why their key is ignored.
+    assert.throws(() => configuredProvider(), /APP8N_MODEL_PROVIDER/);
+  });
+});
+
+check("each provider's key is stored under its own vault name", async () => {
+  const { setModelKey, resolveKeyFor, clearModelKey } = await import(
+    "../src/lib/agent/model-key"
+  );
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv(
+    { ANTHROPIC_API_KEY: undefined, GOOGLE_GENERATIVE_AI_API_KEY: undefined },
+    async () => {
+      await setModelKey(userId, PROVIDERS.google, "AIzaOnlyGoogle");
+
+      const google = await resolveKeyFor(userId, PROVIDERS.google);
+      assert.equal(google.key, "AIzaOnlyGoogle");
+      assert.equal(google.source, "vault");
+
+      // A key for one provider must never satisfy another.
+      const anthropic = await resolveKeyFor(userId, PROVIDERS.anthropic);
+      assert.equal(anthropic.key, null);
+      assert.equal(anthropic.source, "none");
+
+      await clearModelKey(userId, PROVIDERS.google);
+    },
+  );
+});
+
+check("the model id is overridable per deployment", async () => {
+  const { modelIdFor, PROVIDERS } = await import("../src/lib/agent/providers");
+
+  assert.equal(modelIdFor(PROVIDERS.google), "gemini-2.5-flash");
+  await withEnv({ APP8N_MODEL_ID: "gemini-3-flash-preview" }, async () => {
+    assert.equal(modelIdFor(PROVIDERS.google), "gemini-3-flash-preview");
+  });
+});
+
+check("every provider is fully described for the settings UI", async () => {
+  // The key field renders entirely from this table, so a provider missing its
+  // console URL or placeholder would ship as an unfillable form.
+  const { MODEL_PROVIDERS, PROVIDERS } = await import(
+    "../src/lib/agent/providers"
+  );
+
+  for (const id of MODEL_PROVIDERS) {
+    const provider = PROVIDERS[id];
+    assert.equal(provider.id, id, `${id} must be keyed by its own id`);
+    for (const field of [
+      "label",
+      "defaultModel",
+      "vaultKeyName",
+      "consoleUrl",
+    ] as const) {
+      assert.ok(provider[field], `${id} is missing ${field}`);
+    }
+
+    if (provider.requiresKey) {
+      assert.ok(provider.envVar, `${id} needs a key but names no env var`);
+      assert.ok(provider.placeholder, `${id} needs a key but has no placeholder`);
+    } else {
+      // Keyless providers are reached at an address instead.
+      assert.ok(provider.baseUrlEnvVar, `${id} is keyless but has no base URL var`);
+      assert.ok(provider.defaultBaseUrl, `${id} is keyless but has no default URL`);
+    }
+    assert.equal(typeof provider.createModel, "function");
+    assert.equal(typeof provider.testConnection, "function");
+  }
+
+  // Two providers sharing a vault name would overwrite each other's keys.
+  const names = MODEL_PROVIDERS.map((id) => PROVIDERS[id].vaultKeyName);
+  assert.equal(new Set(names).size, names.length, "vault names must be unique");
+});
+
+check("a keyless provider is configured by its address, not a key", async () => {
+  // Ollama has no secret to hold, so "no key" must not mean "unusable" — and
+  // an unrelated local install must not capture the agent from a hosted
+  // provider the user deliberately chose, so the address has to be explicit.
+  const { providerConfigured, activeProvider } = await import(
+    "../src/lib/agent/model-key"
+  );
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+      OPENAI_API_KEY: undefined,
+      OLLAMA_BASE_URL: undefined,
+    },
+    async () => {
+      assert.equal(
+        await providerConfigured(userId, PROVIDERS.ollama),
+        false,
+        "an unset address must not count as configured",
+      );
+
+      process.env.OLLAMA_BASE_URL = "http://localhost:11434";
+      assert.equal(await providerConfigured(userId, PROVIDERS.ollama), true);
+      assert.equal((await activeProvider(userId)).id, "ollama");
+    },
+  );
+});
+
+check("a hosted key outranks a local runtime in auto-detection", async () => {
+  const { activeProvider, setModelKey, clearModelKey } = await import(
+    "../src/lib/agent/model-key"
+  );
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: undefined,
+      ANTHROPIC_API_KEY: undefined,
+      GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+      OPENAI_API_KEY: undefined,
+      OLLAMA_BASE_URL: "http://localhost:11434",
+    },
+    async () => {
+      await setModelKey(userId, PROVIDERS.google, "AIzaHostedWins");
+      assert.equal((await activeProvider(userId)).id, "google");
+      await clearModelKey(userId, PROVIDERS.google);
+    },
+  );
+});
+
+check("a keyless provider counts as configured for a run", async () => {
+  // isAgentConfiguredFor gates /api/chat. Keying it on a stored secret would
+  // 503 every Ollama user forever.
+  const { isAgentConfiguredFor } = await import("../src/lib/agent/model");
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: "ollama",
+      OLLAMA_BASE_URL: "http://localhost:11434",
+    },
+    async () => {
+      assert.equal(await isAgentConfiguredFor(userId), true);
+    },
+  );
+
+  await withEnv(
+    {
+      APP8N_MODEL_PROVIDER: "openai",
+      OPENAI_API_KEY: undefined,
+    },
+    async () => {
+      // A key-requiring provider with no key is still not configured.
+      assert.equal(await isAgentConfiguredFor(userId), false);
+    },
+  );
+});
+
+check("ollama's base URL is read from the environment", async () => {
+  const { baseUrlFor, PROVIDERS } = await import("../src/lib/agent/providers");
+
+  await withEnv({ OLLAMA_BASE_URL: undefined }, async () => {
+    assert.equal(baseUrlFor(PROVIDERS.ollama), "http://localhost:11434");
+  });
+  await withEnv({ OLLAMA_BASE_URL: "http://192.168.1.50:11434" }, async () => {
+    assert.equal(baseUrlFor(PROVIDERS.ollama), "http://192.168.1.50:11434");
+  });
+  // Hosted providers have no address to configure.
+  assert.equal(baseUrlFor(PROVIDERS.anthropic), undefined);
+});
+
+check("ollama reports a missing model rather than a bare failure", async () => {
+  // A running server with nothing pulled is the most likely setup mistake,
+  // and "connection ok" there would send the user hunting in the wrong place.
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  const server = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ models: [{ name: "llama3.1:latest" }] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const missing = await PROVIDERS.ollama.testConnection({
+      modelId: "qwen2.5",
+      baseUrl,
+    });
+    assert.equal(missing.ok, false);
+    assert.match(
+      missing.ok ? "" : missing.error,
+      /ollama pull qwen2\.5/,
+      "the fix must be in the message",
+    );
+
+    // A bare name matches the ":latest" tag Ollama reports for it.
+    const present = await PROVIDERS.ollama.testConnection({
+      modelId: "llama3.1",
+      baseUrl,
+    });
+    assert.equal(present.ok, true);
+  } finally {
+    server.close();
+  }
+});
+
+check("an unreachable ollama is reported as unreachable", async () => {
+  const { PROVIDERS } = await import("../src/lib/agent/providers");
+
+  // Port 1 is reserved and nothing listens on it.
+  const result = await PROVIDERS.ollama.testConnection({
+    modelId: "qwen2.5",
+    baseUrl: "http://127.0.0.1:1",
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.ok ? "" : result.error, /Could not reach Ollama/);
+});
+
+// --- OAuth round trip -------------------------------------------------------
+
+check("the OAuth callback redirects somewhere that exists", async () => {
+  // The default was `/connections`, a route this app has never had: a user who
+  // reached consent without a returnTo landed on a 404 holding a freshly
+  // linked account. A redirect target nothing serves is the same class of bug
+  // as a column nothing reads.
+  const { readFileSync, existsSync } = await import("node:fs");
+
+  const source = readFileSync(
+    "src/app/api/auth/google/callback/route.ts",
+    "utf8",
+  );
+  const fallback = /returnTo \?\? "([^"]+)"/.exec(source)?.[1];
+  assert.ok(fallback, "the callback must name a fallback redirect");
+
+  const page = `src/app${fallback === "/" ? "" : fallback}/page.tsx`;
+  assert.ok(
+    existsSync(page),
+    `callback redirects to ${fallback}, but ${page} does not exist`,
+  );
+});
+
+check("OAuth state round-trips and rejects tampering", async () => {
+  // The state carries the PKCE verifier, so forging one would mean completing
+  // someone else's consent flow.
+  const { createOAuthState, consumeOAuthState, GoogleOAuthError } =
+    await import("../src/lib/google/oauth");
+
+  const state = createOAuthState({
+    verifier: "test-verifier",
+    userId,
+    client: "web",
+    returnTo: "/settings",
+  });
+
+  const payload = consumeOAuthState(state);
+  assert.equal(payload.verifier, "test-verifier");
+  assert.equal(payload.userId, userId);
+  assert.equal(payload.returnTo, "/settings");
+
+  // Flipping one character of the envelope must fail the auth tag.
+  const tampered = state.slice(0, -2) + (state.endsWith("A") ? "B" : "A");
+  assert.throws(() => consumeOAuthState(tampered), GoogleOAuthError);
 });
 
 async function main() {

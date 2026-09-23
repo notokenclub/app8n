@@ -34,6 +34,12 @@ export const NAV_ITEMS: NavItem[] = [
     description: "Saved and scheduled automations",
   },
   {
+    href: "/runs",
+    label: "Activity",
+    icon: "Clock",
+    description: "What every run actually did",
+  },
+  {
     href: "/settings",
     label: "Settings",
     icon: "Component",

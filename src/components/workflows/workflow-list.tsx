@@ -135,6 +135,7 @@ export function WorkflowList({
       {workflows.map((workflow) => {
         const triggerIcon = TRIGGER_ICONS[workflow.triggerType] ?? "Automation";
         const paused = workflow.status === "paused";
+        const archived = workflow.status === "archived";
         const selected = selectedId === workflow.id;
 
         return (
@@ -222,7 +223,7 @@ export function WorkflowList({
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={setStatus.isPending || workflow.status === "archived"}
+                disabled={setStatus.isPending || archived}
                 icon={
                   <Icon
                     name={
@@ -262,7 +263,7 @@ export function WorkflowList({
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={runNow.isPending || workflow.status === "archived"}
+                disabled={runNow.isPending || archived}
                 icon={
                   <Icon
                     name={
@@ -292,6 +293,43 @@ export function WorkflowList({
                 {runNow.isPending && runNow.variables === workflow.id
                   ? "Running"
                   : "Run now"}
+              </Button>
+
+              {/* Archiving is the reversible way to retire a blueprint: the
+                  scheduler only ever loads `active`, so an archived one stops
+                  running while its history stays attributed. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={setStatus.isPending}
+                icon={
+                  <Icon name={archived ? "ArrowUp" : "FolderClosed"} size={16} />
+                }
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setStatus.mutate(
+                    {
+                      id: workflow.id,
+                      status: archived ? "paused" : "archived",
+                    },
+                    {
+                      onSuccess: () =>
+                        toast.success(
+                          archived
+                            ? `${workflow.title} restored, still paused.`
+                            : `${workflow.title} archived.`,
+                        ),
+                      onError: (error) =>
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not update the blueprint.",
+                        ),
+                    },
+                  );
+                }}
+              >
+                {archived ? "Restore" : "Archive"}
               </Button>
 
               {confirmingDelete === workflow.id ? (

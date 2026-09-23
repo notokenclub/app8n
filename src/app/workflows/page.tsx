@@ -2,10 +2,9 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Icon, IconTile, Tabs } from "@/ds";
+import { Icon, IconTile } from "@/ds";
 import { PageHeader } from "@/components/shell/page-header";
 import { WorkflowList } from "@/components/workflows/workflow-list";
-import { RunHistory } from "@/components/workflows/run-history";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useWorkflows, type WorkflowSummary } from "@/hooks/use-workflows";
@@ -23,9 +22,7 @@ const WorkflowCanvas = dynamic(
   },
 );
 
-const TABS = ["Blueprints", "Runs"];
-
-function Blueprints() {
+function Body() {
   const { data, isLoading } = useWorkflows();
   const isDesktop = useIsDesktop();
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -93,32 +90,14 @@ function Blueprints() {
   );
 }
 
-/**
- * Blueprints and their run history, as two tabs on one page rather than a
- * fifth item in the tab bar: a run only ever makes sense next to the
- * automation that produced it, and a phone's tab bar has room for four.
- */
 export default function WorkflowsPage() {
-  const [tab, setTab] = React.useState(0);
-
   return (
     <>
       <PageHeader
         title="Blueprints"
-        subtitle="Saved automations and what they have done"
+        subtitle="Saved and scheduled automations"
       />
-
-      <div className="px-space-md">
-        <Tabs tabs={TABS} active={tab} onChange={setTab} />
-      </div>
-
-      {tab === 0 ? (
-        <Blueprints />
-      ) : (
-        <div className="scroll-region mx-auto w-full max-w-2xl flex-1 overflow-y-auto p-space-md">
-          <RunHistory />
-        </div>
-      )}
+      <Body />
     </>
   );
 }

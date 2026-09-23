@@ -3,9 +3,11 @@
 Everything needed to pick this project up cold — what exists, why it was built this way,
 and where the seams are. If you're new, read this after the README.
 
-Current state: **Phases 1–6 complete.** Typecheck, lint and design-system adherence
-clean; 8/8 vault checks, 26/26 Google checks, 26/26 agent checks; production build
-succeeds with 18 routes. The product is deployable — see `docs/DEPLOYMENT.md`.
+Current state: **Phases 1–6 complete, and deployable.** Typecheck, lint and
+design-system adherence clean; 8/8 vault checks, 26/26 Google checks, 48/48 agent checks;
+production build succeeds. The interface is built entirely from the Zelleo design system
+(`docs/DESIGN-SYSTEM.md`) and the backend ships as a container pair
+(`docs/DEPLOYMENT.md`).
 
 ---
 
@@ -43,7 +45,7 @@ an implementation detail.
 | Framework | Next.js **16.3.4** App Router + Turbopack |
 | UI | React **19.2.8**, Tailwind v4, shadcn on `@base-ui/react`, `lucide-react`, `sonner` |
 | Data | Drizzle ORM + `better-sqlite3` (Postgres-swappable via `DATABASE_URL`) |
-| Agent | Vercel AI SDK v7 + `@ai-sdk/anthropic` |
+| Agent | Vercel AI SDK v7 — Anthropic, Gemini, OpenAI, or local Ollama |
 | Google | `googleapis` v178, native OAuth 2.0 |
 | Canvas | `@xyflow/react` v12 (read-only) |
 | Scheduling | `croner` |
@@ -74,12 +76,16 @@ src/
       chat/route.ts                                    streaming agent endpoint
       approvals/route.ts, approvals/[id]/route.ts      HITL list + resolve
       workflows/route.ts                               workflow list
-      settings/anthropic-key/route.ts                  vault-stored API key
+      settings/model-key/route.ts                      vault-stored model key
+      executions/route.ts, executions/[id]/route.ts    run history + trace
+      push/devices/route.ts                            push device registration
+      auth/google/health/route.ts                      live connection probe
     page.tsx              chat home
-    approvals/page.tsx    workflows/page.tsx    settings/page.tsx
+    approvals/page.tsx    workflows/page.tsx    settings/page.tsx    runs/page.tsx
   components/
     chat/{chat-view,composer,tool-part}.tsx
     approvals/{approval-card,swipe-confirm}.tsx
+    runs/{run-list,run-trace}.tsx
     workflows/{workflow-canvas,workflow-list}.tsx
     shell/{app-shell,page-header}.tsx
     ui/                   17 shadcn primitives
@@ -91,13 +97,19 @@ src/
       services/{gmail,calendar,sheets,docs,tasks}Service.ts
     agent/
       tools.ts toolset.ts orchestrator.ts prompt.ts
-      approvals.ts execute-approved.ts execution.ts context.ts model.ts api-key.ts
+      approvals.ts execute-approved.ts execution.ts context.ts
+      model.ts model-key.ts providers.ts
     scheduler/{jobs,worker}.ts
+    push/{devices,dispatch,fcm}.ts   approval notifications
+    workflows/authoring.ts           shared blueprint validation + save
+    google/health.ts                 live credential verification
     blueprints.ts         the three starter automations, typed
-  hooks/                  use-{approvals,workflows,settings,media-query,now,speech-input}
+  hooks/                  use-{approvals,workflows,executions,push,settings,media-query,now,speech-input}
 scripts/                  keygen, vault-selftest, google-selftest, agent-selftest,
-                          seed-blueprints, seed-demo, worker, selftest-env
-drizzle/                  0000_gorgeous_wildside.sql, 0001_gifted_doorman.sql
+                          seed-blueprints, seed-demo, worker, selftest-env,
+                          register-deep-link
+drizzle/                  0000_gorgeous_wildside.sql, 0001_gifted_doorman.sql,
+                          0002_motionless_punisher.sql
 mobile/shell/index.html   capacitor.config.ts
 ```
 
@@ -105,7 +117,7 @@ mobile/shell/index.html   capacitor.config.ts
 
 ## 4. Database schema
 
-Six tables in `src/lib/db/schema.ts`, all ownership-scoped by `user_id` with cascading
+Seven tables in `src/lib/db/schema.ts`, all ownership-scoped by `user_id` with cascading
 deletes. The app is single-user local-first by default, but the schema is multi-user and
 queries are written that way deliberately.
 
@@ -137,6 +149,11 @@ cancelled`. Two JSON columns carry the weight:
 Note the column is `inputPayload`, not `input`. SQLite silently accepts a wrong key and
 drops it, leaving a null payload — only `tsc` catches this. It has bitten us once.
 
+**`push_devices`** — one row per device that should receive approval notifications,
+unique on `token` so a reinstalled app cannot be notified twice. The token is a delivery
+address issued by APNs/FCM, not a credential of the user's, so it is stored in the clear
+rather than in the vault.
+
 **`approval_requests`** — the HITL gate, one row per decision.
 
 - `parametersJson` is what the agent *proposed*.
@@ -151,8 +168,8 @@ drops it, leaving a null payload — only `tsc` catches this. It has bitten us o
 
 ## 5. The tool registry
 
-25 tools in `src/lib/agent/tools.ts` — 21 Google connectors plus four `core` tools
-that act on app8n itself, which is what makes "make that a daily thing" produce a real
+25 tools in `src/lib/agent/tools.ts` — 21 Google connectors plus four `core` tools that
+act on app8n itself, which is what makes "make that a daily thing" produce a real
 automation rather than a promise. Approval is **derived, not hand-maintained**:
 
 ```ts
@@ -181,7 +198,7 @@ An unknown tool name gates rather than executes.
 | Docs | `docs_create`, **`docs_append_text`**, `docs_read` |
 | Drive | `drive_search` |
 | Tasks | `tasks_list`, `tasks_create`, `tasks_complete` |
-| app8n itself | `workflow_list`, `workflow_set_status`, **`workflow_save`**, **`workflow_delete`** |
+| Core | `workflow_save`, `workflow_list`, `workflow_set_status`, **`workflow_delete`** |
 
 **Bold** tools are gated by the HITL approval flow.
 
@@ -255,13 +272,14 @@ npm run typecheck
 npm run lint
 npm run vault:selftest      # 8 checks
 npm run google:selftest     # 26 checks
-npm run agent:selftest      # 26 checks
+npm run agent:selftest      # 48 checks
 npm run lint:ds             # design-system adherence
 
 npm run db:generate | db:migrate | db:push | db:studio
 npm run vault:keygen        # mint APP8N_ENCRYPTION_KEY
 
-npm run cap:sync
+npm run cap:sync            # cap sync, then re-register the app8n:// deep link
+npm run cap:deeplink        # re-register the deep link on its own
 npm run cap:add:ios | cap:add:android | cap:open:ios | cap:open:android
 
 npm run build:worker        # bundle the scheduler for the image
@@ -286,6 +304,11 @@ Full annotated list lives in `.env.example`. The ones that trip people up:
 | `NEXT_PUBLIC_APP8N_API_URL` | Backend the client calls. Leave blank for same-origin web; set it for the native shell. |
 | `APP8N_MOBILE_REDIRECT_URI` | `app8n://auth/callback`. Must match the URL scheme registered in the iOS and Android projects or OAuth will complete and then strand the user. |
 | `DATABASE_URL` | `file:./data/app8n.db` locally; point at Postgres/Supabase for server mode. |
+| `APP8N_MODEL_PROVIDER` | `anthropic`, `google`, `openai` or `ollama`. Optional — the provider is inferred from whichever is configured, so this only forces a choice when several are. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini key. Google's free tier makes this the no-cost hosted option. |
+| `OLLAMA_BASE_URL` | Selects Ollama. Unset means off, even if Ollama is running — see below. |
+| `APP8N_MODEL_ID` | Overrides the provider's default model. |
+| `APP8N_FCM_SERVICE_ACCOUNT` | Firebase service account (inline JSON or a path) for approval push. Unset means push is skipped, never failed — the Approvals tab stays the channel of record. |
 
 `.env.local` and `data/app8n.db` are gitignored. `.env.example` contains only placeholders
 and localhost URLs.
@@ -313,46 +336,219 @@ npm run build
 
 ---
 
-## 11. What Phase 6 closed
+## 11. Phase 6: what was just built
 
-Every gap the previous handoff listed as "where to pick up", except the two that need
-credentials this repository does not have.
+### Workflow authoring
 
-- **Workflow authoring from chat.** `workflow_save` / `workflow_list` /
-  `workflow_set_status` / `workflow_delete` in the registry, all going through
-  `src/lib/workflows/authoring.ts`, which is also what `POST /api/workflows` and
-  `PUT /api/workflows/[id]` call — so an automation written by a script and one saved
-  from a conversation are the same object, validated the same way. Saving and deleting
-  are gated: they create or destroy something that acts unattended, and the approval
-  card is where the user corrects the schedule before it is real.
-- **Run history.** `GET /api/executions` and the Runs tab on `/workflows` render
-  `stepsJson` — every tool call, result, pause and error, in the design system's log
-  console. The trace was always captured; nothing rendered it.
-- **Run now, delete, and per-card webhook details** on the blueprint list.
-- **Webhook triggers.** `POST /api/hooks/[id]`, authenticated by a per-workflow secret
-  minted into the vault and compared in constant time. A wrong secret answers 404 so the
-  endpoint cannot enumerate workflow ids. The payload reaches the run quoted as data,
-  explicitly labelled as not-instructions.
-- **Runs that outlive their process.** A failure before the first step used to leave a row
-  saying `running` for ever; `buildAgentConfig` now closes the row on the way out, and the
-  scheduler sweeps anything still `running` after 15 minutes.
-- **Approval notifications.** `APP8N_NOTIFY_WEBHOOK_URL` — any JSON POST endpoint — is
-  called for every background gate, from the worker and from "run now".
-- **Deployment.** Boot-time environment validation that exits non-zero rather than serving
-  broken, migrations applied at boot, `/api/health`, an access-token guard in
-  `src/proxy.ts`, a Dockerfile and compose file (server + bundled scheduler), and CI
-  running the full gate. `docs/DEPLOYMENT.md` is the operator's document.
+`src/lib/workflows/authoring.ts` is the single validation-and-save path, shared by the
+agent's `workflow_save` tool and `POST/PATCH /api/workflows`. Both go through it so a
+blueprint created from chat and one created from the UI are the same kind of object.
 
-### Still open
+The steps a user describes become `nodesJson` **and** the plan `buildRunInstruction`
+reads back into the scheduled run — the same structure the canvas draws. This is the
+§7 lesson enforced rather than restated, and `agent-selftest` asserts the round trip.
 
-1. **Real Google credentials end-to-end.** Everything is verified against
-   `APP8N_MOCK_GOOGLE=1`. The OAuth flow, refresh-token handling and scope consent have
-   still not met a live Workspace account.
-2. **Native builds and native push.** Capacitor configuration is written, but the iOS and
-   Android projects are not generated, the `app8n://` scheme is not registered, and native
-   push needs an APNs key and an FCM project. The delivery hook they would use
-   (`notifyApprovalRequired`) is already called from every background run.
-3. **Postgres.** The schema is written for it; the client is still `better-sqlite3` only,
-   which is what caps the deployment at one instance.
-4. **Editing a blueprint in the UI.** The API and the agent can both edit one; the canvas
-   is still read-only.
+Two things fail closed. An unknown tool name is rejected rather than saved, because a
+step naming a tool that does not exist renders in the canvas and silently does nothing
+on every run. And switching a trigger away from `cron` clears `cronExpression`, so a
+stale schedule cannot resurrect itself later.
+
+`workflow_save` is `impact: "write"`, so it is ungated: saving a local automation is not
+an externally visible act. The actions it later performs are gated individually when it
+runs, which is where the human decision actually belongs.
+
+### Run history
+
+`stepsJson` was captured from the first run and rendered nowhere, which made every failed
+overnight job a dead end. `/runs` is that screen: `RunTrace` renders the discriminated
+union directly, reusing `tool-display` and `tool-result` so a trace and the live chat
+describe a tool call identically.
+
+The list route deliberately does not select `stepsJson` — one trace can carry every tool
+result a run touched, and fifty of them would dwarf the summary. The detail route fetches
+one run's steps instead.
+
+### Push notifications
+
+`src/lib/push/` is device registry, dispatcher and an FCM HTTP v1 transport implemented
+directly (a service-account JWT-bearer grant and one POST — all firebase-admin would have
+done for us, without the dependency tree).
+
+Delivery is best-effort by design: **a failed push must never fail the run that raised the
+gate.** The approval is already durable and `/approvals` polls for it, so push is an
+accelerant, not the channel of record. With no provider configured the dispatcher reports
+`skipped: "not_configured"` and the run is unaffected. A token FCM reports as
+`UNREGISTERED` is deleted rather than retried forever.
+
+The notification payload carries identifiers only. The card is re-fetched from the backend
+on open, so parameters never travel through a push provider.
+
+### Model providers
+
+`src/lib/agent/providers.ts` is the only module that names a vendor. Everything above
+it — the tool registry, the approval gate, the scheduler — was already provider-agnostic,
+so adding Gemini meant describing a second provider rather than threading a branch
+through the runtime.
+
+The provider is inferred from whichever key exists, and `APP8N_MODEL_PROVIDER` only has
+to be set to break a tie. Requiring an environment variable *as well as* a saved key
+would mean Settings appeared to accept a key that never took effect — which is exactly
+what `.env.example` used to promise: it listed `OPENAI_API_KEY` and `OLLAMA_BASE_URL`
+as "optional alternatives" while nothing in the codebase read either one. Dead config
+is the same failure as a dead column, and it cost a user real time.
+
+Each provider owns its own vault row name, so keys can coexist and one can never satisfy
+another. `anthropic`'s name is unchanged from when it was the only provider, so existing
+vault entries survive the change.
+
+**Ollama is keyless, which the model had to learn.** Reachability is its credential, so
+`requiresKey: false` makes a missing key stop meaning "unconfigured" — otherwise
+`isAgentConfiguredFor` would 503 every local user forever. It is selected by setting
+`OLLAMA_BASE_URL` rather than by probing localhost: an unrelated Ollama install must not
+quietly capture the agent from a hosted provider someone deliberately chose. For the same
+reason hosted providers sit before it in `MODEL_PROVIDERS`, which is the auto-detection
+order.
+
+Its connection test checks the server is up **and** that the model is pulled, reporting
+`ollama pull <model>` and what is installed. A running server with nothing pulled is the
+likeliest setup mistake, and passing it as "connected" would send people hunting in the
+wrong place.
+
+**Dependency note:** every `@ai-sdk/*` package pins `@ai-sdk/provider` exactly. If they
+disagree, npm nests copies and `LanguageModel` becomes structurally incompatible between
+them — a confusing wall of type errors that looks like a code bug. Keep them all on
+versions resolving to a single hoisted `@ai-sdk/provider`. The check:
+
+```bash
+find node_modules/@ai-sdk/*/node_modules -name package.json 2>/dev/null   # must be empty
+```
+
+(Check for files, not directories — npm leaves empty folders behind and they look like
+a violation when there is none.)
+
+### Resuming a parked run
+
+`messagesJson` was written on every parked run and read by nothing — the same dead-state
+failure §7 describes, in the column §4 calls "what makes a run resumable". It is now true:
+`executeApprovedAction` hands the parked conversation back to the agent with the approved
+call's *result*, and the run continues its remaining steps in the same execution row.
+
+The model is given the result, never the parameters it originally proposed, so what the
+human actually approved is what the rest of the run builds on. Any further gated call
+opens a new gate as usual — resumption is not a way around the safety gate.
+
+Rejection still cancels the run outright rather than resuming with a denial, matching the
+system prompt's instruction to acknowledge a denied action and stop.
+
+If the resumed leg fails, the execution is marked failed — but the trace still shows the
+approved action's result before the error, so "the email sent, then the follow-up broke"
+stays readable rather than collapsing into a bare failure.
+
+### Live Google verification
+
+`src/lib/google/health.ts` makes the same round trip the agent's tools make — token
+refresh included — against the endpoints the connectors actually use. A probe that
+exercised a different API could pass while the tools still failed.
+
+It reports `mock: true` when it ran against fixtures, because a green tick that conflated
+"verified against Google" with "verified against fixtures" would be exactly the false
+confidence the check exists to remove. Sheets and Docs report `not_exercisable`: neither
+API offers a listing call that proves a grant without a file id, and claiming otherwise
+would be a lie of the same kind.
+
+`needsReconnect` distinguishes a dead grant — where only re-consent helps — from a
+transient failure, so the UI sends people to the right remedy.
+
+### Mobile deep link
+
+`scripts/register-deep-link.ts` writes the `app8n://` scheme into the generated iOS and
+Android projects, and runs as part of `npm run cap:sync` so a regenerated project cannot
+silently lose it. The scheme is derived from `APP8N_MOBILE_REDIRECT_URI`, so the backend's
+redirect and the native registration cannot drift.
+
+The iOS guard is scoped to the `CFBundleURLTypes` section on purpose: the app's own name
+appears as `<string>app8n</string>` under `CFBundleName`, and matching that anywhere in the
+file reported the scheme as already registered on a project where it was not. The
+self-test caught this.
+
+---
+
+### Design system
+
+The interface is built entirely from the Zelleo design system, vendored under `src/ds`
+and imported only through the `@/ds` barrel. Tokens — colour, spacing, radii, typography
+— are the only values any component may use, and `npm run lint:ds` enforces that against
+the system's own `_adherence.oxlintrc.json`. `docs/DESIGN-SYSTEM.md` is the reference,
+including the two traps: never pass `style` to a system component (it replaces their
+inline style wholesale), and the palette utilities must come from a plain `@theme`, not
+`@theme inline`, or the charcoal theme cannot re-point them.
+
+### Webhook triggers
+
+`webhook` was the one trigger type with no entry point. `POST /api/hooks/[id]`
+authenticates against a per-workflow secret minted into the vault and compared in
+constant time, answers 404 for a bad secret so the endpoint cannot enumerate workflow
+ids, and quotes the request body into the run as data explicitly labelled as
+not-instructions. Gated tools still stop at the approval card, so a webhook cannot talk
+the agent into sending mail. The secret is revealed once, from the blueprint card.
+
+### Runs that outlive their process
+
+A run that failed before its first step — a missing key, an unreachable provider — used
+to leave a row saying `running` for ever, because the model was resolved outside the
+orchestrator's `try`. `buildAgentConfig` now closes the row on the way out, and
+`failStaleExecutions` sweeps anything still `running` after 15 minutes on each worker
+tick, so a killed process cannot leave a ghost either.
+
+### Deployment
+
+`src/lib/env.ts` runs at boot through `src/instrumentation.ts` and **exits non-zero**
+rather than serving a deployment that is unprotected or misconfigured. Migrations are
+applied at boot by both processes. `src/proxy.ts` (Next's renamed `middleware`) gates
+every request behind `APP8N_ACCESS_TOKEN` when one is set, exempting `/api/health` and
+`/api/hooks/*`, which carry their own per-workflow secret. `/api/health` reports what is
+configured, never the values. The Dockerfile ships the server and a bundled scheduler
+(`npm run build:worker`) from one image, `docker-compose.yml` runs both, and CI runs the
+full gate plus an image build. `docs/DEPLOYMENT.md` is the operator's document.
+
+### Approval notifications without a push provider
+
+`APP8N_NOTIFY_WEBHOOK_URL` sends every background gate to any endpoint that accepts a
+JSON POST — ntfy, Slack, Discord, Home Assistant — so an approval raised at 7am reaches
+someone before a Firebase project exists. It runs alongside the FCM transport rather
+than replacing it.
+
+
+## 12. Where to pick up
+
+1. **Generate and commit the native projects.** `cap add ios` needs macOS and Xcode;
+   `cap add android` needs the Android SDK. Neither was available where Phase 6 was built,
+   and committing generated projects that had never been built would have been the same
+   mistake as a canvas the runtime never saw. Run both on a suitable machine, then
+   `npm run cap:sync` — the deep link registers itself, and `register-deep-link` is
+   idempotent and self-tested against realistic fixtures.
+2. **Real Google credentials end-to-end.** Still the highest-value unknown, but it is now
+   a button rather than an investigation: connect an account and press **Test connection**
+   in Settings. The OAuth flow, refresh-token rotation and scope consent have still never
+   met a live Workspace account.
+3. **Push against a real device.** The FCM transport is implemented and its no-provider
+   path is tested, but no notification has been delivered to a physical phone. Needs a
+   Firebase project, `APP8N_FCM_SERVICE_ACCOUNT`, and the native projects from (1).
+4. **Editing a blueprint from the UI.** The canvas is still read-only; today you change an
+   automation by saying so in chat, which is the intended primary path. The server side for
+   a visual editor already exists — `PATCH /api/workflows` accepts a full draft and
+   validates it through the same `saveWorkflow` the agent uses — so this is a UI job, not a
+   backend one. No client hook is shipped for it deliberately: an unused one would be the
+   dead code this codebase keeps warning about.
+5. **Local-model reliability.** Ollama works, but app8n's surface is 25 tools and a
+   multi-step approval gate, which small local models chain far less reliably than the
+   hosted ones. `qwen2.5` is the default because it is the better tool caller, not the
+   better writer. Worth measuring properly and documenting which local models actually
+   hold up.
+6. **Postgres.** The schema is written for it, but the client is `better-sqlite3` only,
+   which is what caps a deployment at one web instance and one scheduler. See
+   §8 of `docs/DEPLOYMENT.md` for what that rules out.
+7. **Approval expiry is done.** `expireStaleApprovals` sweeps on every worker tick and on
+   every `GET /api/approvals`, and `resolveApproval` re-checks inline, so an expired gate
+   cannot execute even if the sweep never ran. The Phase 5 note listing this as missing was
+   already stale.

@@ -28,7 +28,7 @@ function finish(
     return NextResponse.redirect(deepLink.toString());
   }
 
-  const target = new URL(returnTo ?? "/connections", appUrl());
+  const target = new URL(returnTo ?? "/settings", appUrl());
   for (const [key, value] of Object.entries(params)) {
     target.searchParams.set(key, value);
   }

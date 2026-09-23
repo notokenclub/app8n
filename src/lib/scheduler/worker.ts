@@ -1,9 +1,10 @@
 import { resolveAgentContext } from "@/lib/agent/context";
 import { expireStaleApprovals } from "@/lib/agent/approvals";
 import { failStaleExecutions } from "@/lib/agent/execution";
-import { isAgentConfigured } from "@/lib/agent/model";
+import { isAgentConfiguredInEnv } from "@/lib/agent/model";
 import { runAgent, type ApprovalRequiredEvent } from "@/lib/agent/orchestrator";
 import type { Workflow } from "@/lib/db/schema";
+import { notifyApprovalRequired } from "@/lib/push/dispatch";
 import {
   loadScheduledWorkflows,
   markWorkflowRun,
@@ -48,7 +49,17 @@ function planOf(workflow: Workflow): string[] {
   });
 }
 
-function instructionFor(workflow: Workflow, payload?: unknown): string {
+/**
+ * The instruction a scheduled run receives, worded by `isAgentic`.
+ *
+ * Exported so a test can assert that a workflow's stored plan actually reaches
+ * the model — the canvas showing steps the run never saw is the specific bug
+ * this wording exists to prevent.
+ */
+export function buildRunInstruction(
+  workflow: Workflow,
+  payload?: unknown,
+): string {
   const parts = [workflow.description?.trim() || workflow.title];
 
   // Without this the canvas would be a lie: `/workflows` draws the steps as
@@ -69,7 +80,7 @@ function instructionFor(workflow: Workflow, payload?: unknown): string {
     );
   }
 
-  // Webhook payloads are quoted as data and labelled as such: whatever the
+  // A webhook payload is quoted as data and labelled as such: whatever the
   // caller sent is input to the automation, not a new set of instructions.
   if (payload !== undefined && payload !== null) {
     parts.push(
@@ -96,13 +107,26 @@ export async function runWorkflow(
     trigger: workflow.triggerType,
     workflowId: workflow.id,
     messages: [
-      { role: "user", content: instructionFor(workflow, hooks.payload) },
+      { role: "user", content: buildRunInstruction(workflow, hooks.payload) },
     ],
     services: ctx.services,
     accountId: ctx.accountId,
     email: ctx.email,
     onApprovalRequired: hooks.onApprovalRequired,
   });
+
+  // Dispatched after the run rather than from inside the gate callback: the
+  // run parks as soon as a gate opens, so nothing is delayed by waiting, and
+  // a rejected push surfaces here instead of becoming an unhandled rejection.
+  for (const approval of result.approvals) {
+    const report = await notifyApprovalRequired(workflow.userId, approval);
+    if (report.skipped === "not_configured") continue;
+    hooks.log?.(
+      `push for ${approval.approvalRequestId}: ${report.delivered} delivered` +
+        (report.failed ? `, ${report.failed} failed` : "") +
+        (report.skipped === "no_devices" ? " (no registered devices)" : ""),
+    );
+  }
 
   hooks.log?.(
     `workflow ${workflow.title} -> ${result.status}` +
@@ -118,9 +142,7 @@ export async function tick(
   await expireStaleApprovals(now);
   // A run whose process died cannot close its own row.
   const abandoned = await failStaleExecutions(now);
-  if (abandoned > 0) {
-    hooks.log?.(`closed ${abandoned} abandoned run(s)`);
-  }
+  if (abandoned > 0) hooks.log?.(`closed ${abandoned} abandoned run(s)`);
 
   const due = selectDueWorkflows(await loadScheduledWorkflows(), now);
 
@@ -147,12 +169,12 @@ export interface WorkerHandle {
  * in flight, and serverless request lifecycles cannot promise that.
  */
 export function startWorker(hooks: WorkerHooks = {}): WorkerHandle {
-  if (!isAgentConfigured()) {
+  if (!isAgentConfiguredInEnv()) {
     // Advisory only. Each run resolves its own user's vault key, which may
     // exist even with nothing in the environment, so this cannot be a refusal
     // to start — the worker has no user to check at boot time.
     hooks.log?.(
-      "ANTHROPIC_API_KEY is not set — runs will rely on a key saved in the vault.",
+      "No model API key in the environment — runs will rely on a key saved in the vault.",
     );
   }
 
