@@ -303,7 +303,7 @@ Create an **OAuth 2.0 Web Application** client at [console.cloud.google.com](htt
 | --- | --- |
 | `APP8N_ACCESS_TOKEN` | Required once the backend is reachable by anything but your own machine: every request must present it, as `Authorization: Bearer …` or by opening `/?access_token=…` once. Generate with `openssl rand -base64 32`. |
 | `APP8N_ALLOW_UNAUTHENTICATED` | Skips that requirement for genuinely private networks. Logged loudly at boot. |
-| `APP8N_NOTIFY_WEBHOOK_URL` | Where approval gates go when nobody has the app open — any endpoint that accepts a JSON POST (ntfy, Slack, Discord, Home Assistant). |
+| `APP8N_NOTIFY_WEBHOOK_URL` | Where approval gates go when nobody has the app open — any endpoint that accepts a JSON POST (ntfy, Slack, Discord, Home Assistant). Runs alongside native push rather than replacing it. |
 | `APP8N_AUTO_MIGRATE` | `0` to stop the server and worker migrating at boot, when a release step does it instead. |
 
 ### App and mobile

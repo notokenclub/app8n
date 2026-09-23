@@ -47,9 +47,10 @@ than starting a server that fails later on the first real request.
 | `APP_URL` | yes | The public URL. OAuth redirects and webhook URLs are built from it, so a `localhost` value in production is rejected. |
 | `APP8N_ACCESS_TOKEN` | yes | See section 3. |
 | `DATABASE_URL` | — | `file:./data/app8n.db`. The volume must be persistent; losing it loses linked accounts and history. |
-| `ANTHROPIC_API_KEY` | no | Optional: a key saved from the settings screen lives in the vault and takes precedence. |
+| `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OLLAMA_BASE_URL`) | no | The provider is auto-detected from whichever key exists; `APP8N_MODEL_PROVIDER` forces a choice. A key saved from the settings screen lives in the vault and takes precedence over the environment. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Without them no Google account can be connected. Add `$APP_URL/api/auth/google/callback` to the client's authorised redirect URIs. |
 | `APP8N_NOTIFY_WEBHOOK_URL` | no | Where approval gates go when nobody is looking at the app. See section 5. |
+| `APP8N_FCM_SERVICE_ACCOUNT` | no | Firebase service-account JSON (inline or a path) for native push to registered devices. |
 | `APP8N_MOCK_GOOGLE` | no | `1` swaps Google for in-memory fixtures. How CI runs; never what you want in production. |
 
 ## 3. Access control
@@ -109,11 +110,20 @@ It works with ntfy, Slack, Discord, Home Assistant or anything else that
 accepts a POST — no account, SDK or push certificate. Failures are swallowed:
 a notification must never fail the run that raised it.
 
-**Native push is not wired.** `@capacitor/push-notifications` is installed, but
-delivering to a device needs an APNs key and an FCM project, which this
-repository does not have. When you have them, the hook to fill is
-`notifyApprovalRequired` in `src/lib/notify.ts` — it is already called from
-every background run, so native push is an added transport, not new plumbing.
+**Native push is wired too.** `src/lib/push/` holds a device registry and an
+FCM HTTP v1 transport, dispatched from the same gate the webhook above uses.
+Set `APP8N_FCM_SERVICE_ACCOUNT` to a service-account JSON (the whole document,
+or a path to it) and registered devices receive the gate directly. With no
+provider configured the dispatcher skips rather than errors, and the settings
+screen reports the two failure modes apart: "no provider configured" is a
+backend job, "no devices registered" means opening the app on a phone.
+
+Payloads carry identifiers only — never the parameters of the action waiting
+for approval — so a lock-screen preview cannot leak the body of an email.
+
+Neither transport has met a physical device in this repository: delivering to
+one needs an APNs key, a Firebase project and the native projects, which
+`docs/HANDOFF.md` §12 lists as the first thing to pick up.
 
 ## 6. Webhook triggers
 
@@ -155,9 +165,15 @@ the key alone decrypts nothing.
 
 ## 9. Mobile
 
-`capacitor.config.ts` is written and `mobile/shell/index.html` exists, but the
-iOS and Android projects are not generated or committed, and the `app8n://`
-scheme still has to be registered in both. Point `APP8N_SERVER_URL` at the
-deployment, run `npm run cap:sync`, then `cap:add:ios` / `cap:add:android`.
-The OAuth flow already returns to `APP8N_MOBILE_REDIRECT_URI` rather than a web
-page, so the native path is handled on the backend side.
+`capacitor.config.ts` and `mobile/shell/index.html` are written, and
+`scripts/register-deep-link.ts` writes the `app8n://` scheme into the generated
+iOS and Android projects as part of `npm run cap:sync`, so a regenerated
+project cannot silently lose it. What is missing is the projects themselves:
+`cap add ios` needs macOS and Xcode, `cap add android` needs the Android SDK,
+and committing generated projects that had never been built would be its own
+kind of lie.
+
+Point `APP8N_SERVER_URL` at the deployment, run `cap add` on a suitable
+machine, then `npm run cap:sync`. The backend already returns OAuth to
+`APP8N_MOBILE_REDIRECT_URI` rather than a web page, so the server side of the
+native flow is done.
