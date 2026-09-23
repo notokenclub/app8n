@@ -9,10 +9,9 @@ import {
   isToolUIPart,
   type UIMessage,
 } from "ai";
-import { AlertCircle, Sparkles } from "lucide-react";
 import { cn } from "cn";
+import { Button, Icon, IconTile, SectionMessage } from "@/ds";
 import { ApprovalCard, type ApprovalCardData } from "@/components/approvals/approval-card";
-import { Button } from "@/components/ui/button";
 import { APPROVALS_KEY } from "@/hooks/use-approvals";
 import { apiUrl } from "@/lib/client-api";
 import { ToolPart, type ToolPartView } from "./tool-part";
@@ -35,6 +34,27 @@ const SUGGESTIONS = [
   "Draft a reply to the last email from my professor",
 ];
 
+/**
+ * The chat transport surfaces a failed response as its raw body, which for
+ * this API is a JSON envelope. Show the sentence inside it rather than the
+ * envelope — presentation only, the error object itself is untouched.
+ */
+function errorText(error: Error): string {
+  try {
+    const parsed: unknown = JSON.parse(error.message);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { message?: unknown }).message === "string"
+    ) {
+      return (parsed as { message: string }).message;
+    }
+  } catch {
+    // Not JSON — the message is already a sentence.
+  }
+  return error.message;
+}
+
 function isApprovalPart(
   part: UIMessage["parts"][number],
 ): part is { type: "data-approval"; id?: string; data: ApprovalDataPart } {
@@ -43,26 +63,28 @@ function isApprovalPart(
 
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-12 text-center">
-      <span className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-        <Sparkles className="size-7" />
-      </span>
-      <div className="space-y-1">
-        <h2 className="text-lg font-semibold tracking-tight">
+    <div className="flex flex-1 flex-col items-center justify-center gap-space-lg px-space-lg py-space-xxl text-center">
+      <IconTile
+        appearance="ember"
+        size={48}
+        icon={<Icon name="Automation" size={16} />}
+      />
+      <div className="max-w-md space-y-space-xxs">
+        <h2 className="font-display text-title-lg">
           What can I take off your plate?
         </h2>
-        <p className="text-sm text-muted-foreground">
-          I can read and act across Gmail, Calendar, Drive, Sheets, Docs and
-          Tasks. Anything irreversible stops for your approval first.
+        <p className="text-body-md text-muted">
+          Reads and acts across Gmail, Calendar, Drive, Sheets, Docs and Tasks.
+          Anything irreversible stops for your approval first.
         </p>
       </div>
-      <div className="grid w-full max-w-md gap-2">
+      <div className="grid w-full max-w-md gap-space-xs">
         {SUGGESTIONS.map((suggestion) => (
           <button
             key={suggestion}
             type="button"
             onClick={() => onPick(suggestion)}
-            className="rounded-xl border border-border bg-card/60 px-3.5 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-card hover:text-foreground active:bg-muted"
+            className="rounded-md border border-border bg-background px-space-sm py-space-xs text-left text-body-md text-body transition-colors hover:border-primary hover:text-foreground"
           >
             {suggestion}
           </button>
@@ -82,7 +104,7 @@ function MessageBubble({ message }: { message: UIMessage }) {
       .join("");
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap text-primary-foreground">
+        <div className="max-w-[85%] rounded-lg bg-primary px-space-sm py-space-xs text-body-md leading-relaxed whitespace-pre-wrap text-primary-foreground">
           {text}
         </div>
       </div>
@@ -99,7 +121,7 @@ function MessageBubble({ message }: { message: UIMessage }) {
           return (
             <div
               key={key}
-              className="max-w-full text-sm leading-relaxed whitespace-pre-wrap text-foreground"
+              className="max-w-full text-body-md leading-relaxed whitespace-pre-wrap text-foreground"
             >
               {part.text}
             </div>
@@ -209,7 +231,7 @@ export function ChatView() {
       >
         <div
           className={cn(
-            "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 px-4 py-4",
+            "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-space-md px-space-md py-space-md",
             messages.length === 0 && "justify-center",
           )}
         >
@@ -222,11 +244,11 @@ export function ChatView() {
           )}
 
           {status === "submitted" && (
-            <div className="flex gap-1 pl-1">
+            <div className="flex gap-space-xxs pl-space-xxs">
               {[0, 150, 300].map((delay) => (
                 <span
                   key={delay}
-                  className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60"
+                  className="size-1.5 animate-bounce rounded-full bg-muted"
                   style={{ animationDelay: `${delay}ms` }}
                 />
               ))}
@@ -234,21 +256,22 @@ export function ChatView() {
           )}
 
           {error && (
-            <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 size-4 shrink-0" />
-              <span className="min-w-0 flex-1 break-words">
-                {error.message}
+            <SectionMessage
+              appearance="danger"
+              title="The run stopped"
+              IconComponent={Icon}
+            >
+              <span className="flex items-start gap-space-xs">
+                <span className="min-w-0 flex-1 break-words">
+                  {errorText(error)}
+                </span>
+                <Button variant="ghost" size="sm" onClick={clearError}>
+                  Dismiss
+                </Button>
               </span>
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={clearError}
-                className="shrink-0 text-destructive"
-              >
-                Dismiss
-              </Button>
-            </div>
+            </SectionMessage>
           )}
+
         </div>
       </div>
 

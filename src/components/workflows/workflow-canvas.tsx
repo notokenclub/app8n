@@ -10,7 +10,7 @@ import {
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { CircleDot } from "lucide-react";
+import { Icon } from "@/ds";
 import { toolDisplay } from "@/lib/tool-display";
 import type { WorkflowSummary } from "@/hooks/use-workflows";
 
@@ -36,12 +36,8 @@ function toFlowNodes(workflow: WorkflowSummary): Node[] {
       position: positionOf(node, index),
       data: {
         label: (
-          <span className="flex items-center gap-2">
-            {display ? (
-              <display.icon className="size-3.5 shrink-0" />
-            ) : (
-              <CircleDot className="size-3.5 shrink-0" />
-            )}
+          <span className="flex items-center gap-space-xs">
+            <Icon name={display ? display.icon : "Automation"} size={16} />
             <span className="truncate">
               {node.label ?? display?.done ?? `Step ${index + 1}`}
             </span>
@@ -52,12 +48,15 @@ function toFlowNodes(workflow: WorkflowSummary): Node[] {
       // own inline styles onto the node wrapper, and a class-based override
       // loses to them without `!important` on every property.
       style: {
-        background: "var(--card)",
-        color: "var(--card-foreground)",
-        border: "1px solid var(--border)",
-        borderRadius: "0.75rem",
-        fontSize: "0.75rem",
-        padding: "0.5rem 0.75rem",
+        background: "var(--color-canvas)",
+        color: "var(--color-ink)",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderColor: "var(--color-hairline)",
+        borderRadius: "var(--radius-md)",
+        fontFamily: "var(--font-sans)",
+        fontSize: "var(--text-caption-size)",
+        padding: "var(--space-xs) var(--space-sm)",
         width: 220,
       },
       type:
@@ -78,7 +77,7 @@ function toFlowEdges(workflow: WorkflowSummary): Edge[] {
       target: edge.target,
       label: edge.label,
       animated: workflow.status === "active",
-      style: { stroke: "var(--border)" },
+      style: { stroke: "var(--color-border-strong)" },
     }));
   }
 
@@ -89,7 +88,7 @@ function toFlowEdges(workflow: WorkflowSummary): Edge[] {
     source: node.id ?? String(index),
     target: workflow.nodes[index + 1]?.id ?? String(index + 1),
     animated: workflow.status === "active",
-    style: { stroke: "var(--border)" },
+    style: { stroke: "var(--color-border-strong)" },
   }));
 }
 
@@ -110,7 +109,7 @@ export default function WorkflowCanvas({
 
   if (nodes.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center p-space-lg text-center text-body-md text-muted">
         This blueprint has no steps recorded yet. It runs as a single agentic
         instruction.
       </div>
@@ -126,7 +125,7 @@ export default function WorkflowCanvas({
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={false}
-      colorMode="dark"
+      colorMode="light"
       className="bg-background"
     >
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} />

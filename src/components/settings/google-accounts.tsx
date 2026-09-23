@@ -2,17 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import {
-  CircleCheckBig,
-  Loader2,
-  Plus,
-  RefreshCw,
-  TriangleAlert,
-  Unplug,
-} from "lucide-react";
-import { cn } from "cn";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge, Button, Icon, SectionMessage, TextBadge } from "@/ds";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useCheckAccount,
@@ -35,28 +25,25 @@ import { SERVICE_ICONS } from "@/lib/tool-display";
 function ServiceGrid({ account }: { account: LinkedAccount }) {
   const granted = new Set(account.services);
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-space-xxs">
       {GOOGLE_SERVICES.map((service) => {
-        const Icon = SERVICE_ICONS[service];
         const on = granted.has(service);
         return (
-          <span
-            key={service}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[0.6875rem] font-medium",
-              on
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                : "border-border bg-muted/40 text-muted-foreground line-through decoration-muted-foreground/50",
-            )}
-          >
-            {Icon && <Icon className="size-3" />}
-            {SERVICE_LABELS[service]}
+          <span key={service} className={on ? undefined : "opacity-60"}>
+            <Badge tone={on ? "success" : "neutral"}>
+              <span className="inline-flex items-center gap-space-xxs">
+                <Icon name={SERVICE_ICONS[service] ?? "Automation"} size={16} />
+                {SERVICE_LABELS[service]}
+                {!on && " — not granted"}
+              </span>
+            </Badge>
           </span>
         );
       })}
     </div>
   );
 }
+
 
 /**
  * Result of a live check.
@@ -69,35 +56,25 @@ function HealthReadout({ health }: { health: AccountHealth }) {
   const failed = health.services.filter((probe) => probe.status === "failed");
 
   return (
-    <div
-      className={cn(
-        "rounded-xl border px-3 py-2.5 text-xs",
+    <SectionMessage
+      appearance={health.ok ? (health.mock ? "warning" : "success") : "danger"}
+      title={
         health.ok
-          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-          : "border-destructive/30 bg-destructive/10 text-destructive",
-      )}
-    >
-      <p className="flex items-center gap-1.5 font-medium">
-        {health.ok ? (
-          <CircleCheckBig className="size-3.5 shrink-0" />
-        ) : (
-          <TriangleAlert className="size-3.5 shrink-0" />
-        )}
-        {health.ok
           ? health.mock
             ? "Mock connectors responded — this proves nothing about Google"
             : "Live check passed"
           : health.needsReconnect
             ? "Reconnect needed"
-            : "Live check failed"}
-      </p>
-
-      {health.error && <p className="mt-1 leading-relaxed">{health.error}</p>}
+            : "Live check failed"
+      }
+      IconComponent={Icon}
+    >
+      {health.error && <span className="block">{health.error}</span>}
 
       {failed.length > 0 && (
-        <ul className="mt-1 space-y-0.5">
+        <ul className="space-y-space-xxs">
           {failed.map((probe) => (
-            <li key={probe.service} className="leading-relaxed">
+            <li key={probe.service}>
               <span className="font-medium">
                 {SERVICE_LABELS[probe.service as keyof typeof SERVICE_LABELS] ??
                   probe.service}
@@ -110,14 +87,14 @@ function HealthReadout({ health }: { health: AccountHealth }) {
       )}
 
       {health.ok && (
-        <p className="mt-1 leading-relaxed opacity-80">
+        <span className="block">
           Checked{" "}
           {health.services.filter((probe) => probe.status === "ok").length} of{" "}
           {health.services.length} granted services. Docs and Sheets have no
           listing call to probe without a file id.
-        </p>
+        </span>
       )}
-    </div>
+    </SectionMessage>
   );
 }
 
@@ -125,46 +102,44 @@ export function GoogleAccounts() {
   const { data, isLoading } = useGoogleAccounts();
   const disconnect = useDisconnectAccount();
   const check = useCheckAccount();
-  const [confirming, setConfirming] = React.useState<string | null>(null);
   const [health, setHealth] = React.useState<Record<string, AccountHealth>>({});
+  const [confirming, setConfirming] = React.useState<string | null>(null);
 
   const connect = () => {
     // A full navigation, not fetch: Google's consent screen has to be driven
     // by the browser. On native, the Capacitor shell intercepts this route and
     // opens the system browser instead (see lib/mobile/native.ts).
-    window.location.href = apiUrl(
-      "/api/auth/google/start?returnTo=/settings",
-    );
+    window.location.href = apiUrl("/api/auth/google/start?returnTo=/settings");
   };
 
   if (isLoading) {
-    return <Skeleton className="h-32 rounded-2xl" />;
+    return <Skeleton className="h-32 rounded-md" />;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-space-sm">
       {data?.googleConfigured === false && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-200">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-          <span>
-            Google OAuth is not configured. Add{" "}
-            <code className="font-mono">GOOGLE_CLIENT_ID</code> and{" "}
-            <code className="font-mono">GOOGLE_CLIENT_SECRET</code> to{" "}
-            <code className="font-mono">.env.local</code> to connect a real
-            account.
-          </span>
-        </div>
+        <SectionMessage
+          appearance="warning"
+          title="Google OAuth is not configured"
+          IconComponent={Icon}
+        >
+          Add <code className="text-caption">GOOGLE_CLIENT_ID</code> and{" "}
+          <code className="text-caption">GOOGLE_CLIENT_SECRET</code> to{" "}
+          <code className="text-caption">.env.local</code> to connect a real
+          account.
+        </SectionMessage>
       )}
 
       {data?.mockMode && (
-        <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <SectionMessage appearance="information" IconComponent={Icon}>
           Running with mock Google connectors — no live Workspace data is being
           read or written.
-        </p>
+        </SectionMessage>
       )}
 
       {data?.accounts.length === 0 && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body-md text-body">
           No Google account connected yet. app8n can&apos;t read your mail or
           calendar until one is.
         </p>
@@ -173,9 +148,9 @@ export function GoogleAccounts() {
       {data?.accounts.map((account) => (
         <div
           key={account.id}
-          className="space-y-3 rounded-2xl border border-border bg-card p-3.5"
+          className="space-y-space-sm rounded-md border border-hairline bg-canvas p-space-sm"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-space-sm">
             {account.avatarUrl ? (
               // A 36px avatar from Google's own CDN gains nothing from the
               // image optimiser, and next/image would force a remotePatterns
@@ -187,22 +162,22 @@ export function GoogleAccounts() {
                 className="size-9 shrink-0 rounded-full"
               />
             ) : (
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium uppercase">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-body-md font-medium text-ink uppercase">
                 {account.email.slice(0, 1)}
               </span>
             )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">
+              <p className="truncate text-body-md font-medium text-ink">
                 {account.displayName ?? account.email}
               </p>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-caption text-muted">
                 {account.email}
               </p>
             </div>
             {account.isPrimary && (
-              <Badge variant="secondary" className="shrink-0">
-                Primary
-              </Badge>
+              <span className="shrink-0">
+                <TextBadge tone="primary">Primary</TextBadge>
+              </span>
             )}
           </div>
 
@@ -210,42 +185,53 @@ export function GoogleAccounts() {
 
           {health[account.id] && <HealthReadout health={health[account.id]} />}
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            disabled={check.isPending}
-            onClick={() =>
-              check.mutate(account.id, {
-                onSuccess: (result) =>
-                  setHealth((current) => ({
-                    ...current,
-                    [account.id]: result,
-                  })),
-                onError: (error) =>
-                  toast.error(
-                    error instanceof Error
-                      ? error.message
-                      : "Could not check the connection.",
-                  ),
-              })
-            }
-          >
-            {check.isPending && check.variables === account.id ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <RefreshCw />
-            )}
-            Test connection
-          </Button>
+          <div className="flex [&>*]:flex-1">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={check.isPending}
+              icon={
+                <Icon
+                  name={
+                    check.isPending && check.variables === account.id
+                      ? "Clock"
+                      : "CheckCircle"
+                  }
+                  size={16}
+                />
+              }
+              onClick={() =>
+                check.mutate(account.id, {
+                  onSuccess: (result) =>
+                    setHealth((current) => ({
+                      ...current,
+                      [account.id]: result,
+                    })),
+                  onError: (error) =>
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Could not check the connection.",
+                    ),
+                })
+              }
+            >
+              Test connection
+            </Button>
+          </div>
 
           {confirming === account.id ? (
-            <div className="flex gap-2">
+            <div className="flex gap-space-xs [&>*]:flex-1">
               <Button
-                variant="destructive"
+                variant="primary"
                 size="sm"
-                className="flex-1"
                 disabled={disconnect.isPending}
+                icon={
+                  <Icon
+                    name={disconnect.isPending ? "Clock" : "LogOut"}
+                    size={16}
+                  />
+                }
                 onClick={() =>
                   disconnect.mutate(account.id, {
                     onSuccess: () => {
@@ -261,46 +247,42 @@ export function GoogleAccounts() {
                   })
                 }
               >
-                {disconnect.isPending ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Unplug />
-                )}
                 Yes, disconnect
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="flex-1"
                 onClick={() => setConfirming(null)}
               >
                 Cancel
               </Button>
             </div>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => setConfirming(account.id)}
-            >
-              <Unplug />
-              Disconnect
-            </Button>
+            <div className="flex [&>*]:flex-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Icon name="LogOut" size={16} />}
+                onClick={() => setConfirming(account.id)}
+              >
+                Disconnect
+              </Button>
+            </div>
           )}
         </div>
       ))}
 
-      <Button
-        variant={data?.accounts.length ? "outline" : "default"}
-        size="lg"
-        className="w-full"
-        disabled={data?.googleConfigured === false}
-        onClick={connect}
-      >
-        <Plus />
-        {data?.accounts.length ? "Connect another account" : "Connect Google"}
-      </Button>
+      <div className="flex [&>*]:flex-1">
+        <Button
+          variant={data?.accounts.length ? "secondary" : "primary"}
+          size="md"
+          disabled={data?.googleConfigured === false}
+          onClick={connect}
+          icon={<Icon name="Add" size={16} />}
+        >
+          {data?.accounts.length ? "Connect another account" : "Connect Google"}
+        </Button>
+      </div>
     </div>
   );
 }

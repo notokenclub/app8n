@@ -17,9 +17,18 @@ import { isValidCron } from "@/lib/scheduler/jobs";
  * what a workflow is.
  */
 
-/** Triggers a user can actually author. `chat` is assigned by the runtime and
- * `webhook` needs a secret that nothing issues yet, so neither is offered. */
+/** Triggers the *agent* may author. `chat` is assigned by the runtime, and a
+ * `webhook` opens an externally callable door, which is a decision for a
+ * person rather than something a model should reach for mid-conversation. */
 export const AUTHORABLE_TRIGGERS = ["manual", "cron", "gmail_poll"] as const;
+
+/** Triggers a person may author over HTTP or from the UI. Webhooks are
+ * offered here because `src/lib/workflows/webhooks.ts` now issues and stores
+ * the secret that makes one safe to expose. */
+export const API_AUTHORABLE_TRIGGERS = [
+  ...AUTHORABLE_TRIGGERS,
+  "webhook",
+] as const;
 
 export const workflowStepSchema = z.object({
   label: z
@@ -44,7 +53,7 @@ export const workflowDraftSchema = z.object({
     .string()
     .min(1)
     .describe("What the automation does, in one or two sentences"),
-  triggerType: z.enum(AUTHORABLE_TRIGGERS),
+  triggerType: z.enum(API_AUTHORABLE_TRIGGERS),
   cronExpression: z
     .string()
     .optional()
@@ -197,4 +206,37 @@ export async function deleteWorkflow(
     .returning({ id: workflows.id });
 
   return removed.length > 0;
+}
+
+/**
+ * Pause, resume or archive. Ownership is part of the WHERE clause rather than
+ * a separate read: someone else's workflow matches nothing and updates
+ * nothing, which is the same outcome without a window between check and write.
+ */
+export async function setWorkflowStatus(
+  userId: string,
+  workflowId: string,
+  status: WorkflowStatus,
+): Promise<Workflow> {
+  const [updated] = await db
+    .update(workflows)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(workflows.id, workflowId), eq(workflows.userId, userId)))
+    .returning();
+
+  if (!updated) throw new WorkflowAuthoringError("No such workflow.");
+  return updated;
+}
+
+export async function listWorkflows(userId: string): Promise<Workflow[]> {
+  return db.select().from(workflows).where(eq(workflows.userId, userId));
+}
+
+/** One line per workflow, for the agent's `workflow_list` tool. */
+export function describeWorkflow(workflow: Workflow): string {
+  const schedule =
+    workflow.triggerType === "cron"
+      ? `cron ${workflow.cronExpression}`
+      : workflow.triggerType;
+  return `${workflow.title} [${workflow.status}, ${schedule}]`;
 }

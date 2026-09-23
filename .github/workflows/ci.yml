@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The gate documented in docs/HANDOFF.md, run on every pull request. Mock mode
+# is what makes this possible with no secrets: every connector and blueprint
+# exercises its real code path against in-memory fixtures.
+env:
+  APP8N_MOCK_GOOGLE: "1"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Mint a throwaway vault key
+        run: echo "APP8N_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")" >> "$GITHUB_ENV"
+
+      # `typecheck` runs `next typegen` first: route and layout types are
+      # generated rather than committed, so on a clean checkout tsc would
+      # otherwise fail on LayoutProps and friends.
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Design-system adherence
+        run: npm run lint:ds
+
+      - run: npm run vault:selftest
+      - run: npm run google:selftest
+      - run: npm run agent:selftest
+
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the deployment image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

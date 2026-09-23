@@ -31,6 +31,22 @@ import { executeApprovedAction } from "../src/lib/agent/execute-approved";
 import { runAgent } from "../src/lib/agent/orchestrator";
 import { getMockStore, resetMockStore } from "../src/lib/google/mock";
 import {
+  deleteWorkflow,
+  listWorkflows,
+  saveWorkflow as saveWorkflowDraft,
+  setWorkflowStatus,
+  WorkflowAuthoringError,
+} from "../src/lib/workflows/authoring";
+import { agentToolNames } from "../src/lib/agent/tools";
+import {
+  ensureWebhookSecret,
+  getWebhookSecret,
+  revokeWebhookSecret,
+  webhookSecretMatches,
+} from "../src/lib/workflows/webhooks";
+import { failStaleExecutions, STALE_RUN_MS } from "../src/lib/agent/execution";
+import { checkEnvironment } from "../src/lib/env";
+import {
   GMAIL_POLL_INTERVAL_MS,
   isValidCron,
   selectDueWorkflows,
@@ -467,6 +483,243 @@ function workflowFixture(overrides: Partial<Workflow>): Workflow {
     ...overrides,
   } as Workflow;
 }
+
+// --- Ownership, webhooks, abandoned runs and the deployment preflight ------
+
+const draftOf = (over: Record<string, unknown> = {}) => ({
+  title: "Owned automation",
+  description: "Something this user saved",
+  triggerType: "manual" as const,
+  steps: [],
+  isAgentic: true,
+  status: "active" as const,
+  ...over,
+});
+
+check("another user's automation cannot be edited, paused or deleted", async () => {
+  const [stranger] = await db
+    .insert(users)
+    .values({ email: `stranger-${Date.now()}@app8n.local` })
+    .returning();
+
+  const mine = await saveWorkflowDraft({
+    userId,
+    draft: draftOf({ title: "Mine alone" }),
+    knownTools: agentToolNames(),
+  });
+
+  await assert.rejects(
+    () =>
+      saveWorkflowDraft({
+        userId: stranger.id,
+        workflowId: mine.id,
+        draft: draftOf({ title: "Hijacked" }),
+        knownTools: agentToolNames(),
+      }),
+    WorkflowAuthoringError,
+  );
+  await assert.rejects(
+    () => setWorkflowStatus(stranger.id, mine.id, "paused"),
+    WorkflowAuthoringError,
+  );
+  assert.equal(
+    await deleteWorkflow(stranger.id, mine.id),
+    false,
+    "delete must not reach across owners",
+  );
+
+  const [still] = await db
+    .select()
+    .from(workflows)
+    .where(eq(workflows.id, mine.id));
+  assert.equal(still.title, "Mine alone");
+  assert.equal(still.status, "active");
+});
+
+check("deleting removes the automation from the owner's list", async () => {
+  const doomed = await saveWorkflowDraft({
+    userId,
+    draft: draftOf({ title: "Temporary" }),
+    knownTools: agentToolNames(),
+  });
+
+  assert.equal(await deleteWorkflow(userId, doomed.id), true);
+  const remaining = await listWorkflows(userId);
+  assert.ok(
+    !remaining.some((row) => row.id === doomed.id),
+    "deleted workflow must be gone",
+  );
+});
+
+check("a webhook secret is minted once, stored encrypted and verified", async () => {
+  const hook = await saveWorkflowDraft({
+    userId,
+    draft: draftOf({ title: "Inbound lead", triggerType: "webhook" }),
+    knownTools: agentToolNames(),
+  });
+
+  const secret = await ensureWebhookSecret(userId, hook.id);
+  assert.ok(secret.length >= 24, "a webhook secret must be unguessable");
+  assert.equal(
+    await ensureWebhookSecret(userId, hook.id),
+    secret,
+    "revealing twice must not rotate the secret",
+  );
+
+  const stored = await db.query.credentialVault.findFirst({
+    where: (table, { and: andOp, eq: eqOp }) =>
+      andOp(eqOp(table.userId, userId), eqOp(table.name, `webhook:${hook.id}`)),
+  });
+  assert.ok(stored, "the secret must be in the vault");
+  assert.ok(
+    !stored!.secret.includes(secret),
+    "the plaintext secret must never be stored",
+  );
+
+  assert.equal(webhookSecretMatches(secret, secret), true);
+  assert.equal(webhookSecretMatches("wrong", secret), false);
+  assert.equal(webhookSecretMatches(null, secret), false);
+
+  await revokeWebhookSecret(userId, hook.id);
+  assert.equal(
+    await getWebhookSecret(userId, hook.id),
+    null,
+    "revoking must remove the secret",
+  );
+});
+
+check("a run whose process died is closed by the sweep", async () => {
+  const [ghost] = await db
+    .insert(executionLogs)
+    .values({
+      userId,
+      trigger: "chat",
+      status: "running",
+      startedAt: new Date(Date.now() - STALE_RUN_MS - 60_000),
+    })
+    .returning();
+
+  const [fresh] = await db
+    .insert(executionLogs)
+    .values({
+      userId,
+      trigger: "chat",
+      status: "running",
+      startedAt: new Date(),
+    })
+    .returning();
+
+  assert.ok((await failStaleExecutions()) >= 1);
+
+  const [ghostAfter] = await db
+    .select()
+    .from(executionLogs)
+    .where(eq(executionLogs.id, ghost.id));
+  assert.equal(ghostAfter.status, "failed");
+  assert.ok(ghostAfter.errorTrace, "a closed run must say why");
+
+  const [freshAfter] = await db
+    .select()
+    .from(executionLogs)
+    .where(eq(executionLogs.id, fresh.id));
+  assert.equal(freshAfter.status, "running", "a live run must not be swept");
+
+  // Leave no open row behind for the checks that count runs.
+  await db
+    .update(executionLogs)
+    .set({ status: "cancelled", finishedAt: new Date() })
+    .where(eq(executionLogs.id, fresh.id));
+});
+
+check("a run that fails before its first step is still closed out", async () => {
+  const before = new Set(
+    (
+      await db
+        .select({ id: executionLogs.id })
+        .from(executionLogs)
+        .where(eq(executionLogs.userId, userId))
+    ).map((row) => row.id),
+  );
+
+  // A model that throws the moment it is called stands in for every failure
+  // that happens before the tool loop — a missing key, an unreachable
+  // provider — which used to leave a row saying `running` for ever.
+  const exploding = new MockLanguageModelV4({
+    doGenerate: async () => {
+      throw new Error("provider unreachable");
+    },
+  });
+
+  const result = await runAgent({
+    userId,
+    trigger: "chat",
+    messages: [{ role: "user", content: "hello" }],
+    model: exploding,
+  }).catch(() => null);
+
+  const created = (
+    await db
+      .select()
+      .from(executionLogs)
+      .where(eq(executionLogs.userId, userId))
+  ).filter((row) => !before.has(row.id));
+
+  assert.equal(created.length, 1, "the run must be recorded");
+  assert.equal(created[0].status, "failed", "and closed, not left running");
+  assert.match(created[0].errorTrace ?? "", /provider unreachable/);
+  assert.equal(result?.status, "failed", "the caller is told it failed");
+});
+
+check("production refuses to start unprotected or unconfigured", () => {
+  const base = {
+    NODE_ENV: "production",
+    APP8N_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+    APP_URL: "https://app8n.example.com",
+    APP8N_ACCESS_TOKEN: "x".repeat(32),
+  } as NodeJS.ProcessEnv;
+
+  assert.equal(
+    checkEnvironment(base).errors.length,
+    0,
+    "a complete production env passes",
+  );
+
+  const noToken = checkEnvironment({ ...base, APP8N_ACCESS_TOKEN: undefined });
+  assert.ok(
+    noToken.errors.some((issue) => issue.variable === "APP8N_ACCESS_TOKEN"),
+    "an exposed backend with no access token must be refused",
+  );
+
+  const loopback = checkEnvironment({
+    ...base,
+    APP_URL: "http://localhost:3000",
+  });
+  assert.ok(
+    loopback.errors.some((issue) => issue.variable === "APP_URL"),
+    "a production APP_URL pointing at localhost breaks OAuth and webhooks",
+  );
+
+  const badKey = checkEnvironment({
+    ...base,
+    APP8N_ENCRYPTION_KEY: "tooshort",
+  });
+  assert.ok(
+    badKey.errors.some((issue) => issue.variable === "APP8N_ENCRYPTION_KEY"),
+    "a malformed vault key must be caught at boot",
+  );
+
+  assert.ok(
+    checkEnvironment({ ...base, APP8N_ACCESS_TOKEN: "short" }).errors.length > 0,
+    "a guessable token is not protection",
+  );
+
+  // Development stays permissive: half-configured is the normal state there.
+  assert.equal(
+    checkEnvironment({ NODE_ENV: "development" } as NodeJS.ProcessEnv).errors
+      .length,
+    0,
+  );
+});
 
 check("cron expressions are validated", () => {
   assert.ok(isValidCron("0 8 * * *"));

@@ -1,11 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { History, X } from "lucide-react";
+import { Icon, IconButton, IconTile, SectionMessage } from "@/ds";
 import { PageHeader } from "@/components/shell/page-header";
 import { RunList } from "@/components/runs/run-list";
 import { RunTrace } from "@/components/runs/run-trace";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useExecution, useExecutions } from "@/hooks/use-executions";
@@ -21,35 +20,46 @@ function RunDetail({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+      <div className="flex items-center gap-space-xs border-b border-border px-space-md py-space-sm">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">
+          <p className="truncate text-body-md font-medium text-ink">
             {data?.workflowTitle ?? "Chat session"}
           </p>
-          <p className="truncate text-xs text-muted-foreground">
-            {data ? `${data.trigger} · ${data.status}` : "Loading…"}
+          <p className="truncate text-caption text-muted">
+            {data ? `${data.trigger} · ${data.status}` : "Loading"}
           </p>
         </div>
         {onClose && (
-          <Button variant="ghost" size="xs" onClick={onClose}>
-            <X />
-          </Button>
+          <IconButton
+            type="button"
+            variant="square"
+            size={32}
+            aria-label="Close this run"
+            onClick={onClose}
+            icon={<Icon name="Cross" size={16} />}
+          />
         )}
       </div>
 
-      <div className="scroll-region min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="scroll-region min-h-0 flex-1 overflow-y-auto p-space-md">
         {isLoading || !data ? (
-          <div className="space-y-3">
-            <Skeleton className="h-12 rounded-xl" />
-            <Skeleton className="h-12 rounded-xl" />
-            <Skeleton className="h-12 rounded-xl" />
+          <div className="space-y-space-sm">
+            <Skeleton className="h-12 rounded-md" />
+            <Skeleton className="h-12 rounded-md" />
+            <Skeleton className="h-12 rounded-md" />
           </div>
         ) : (
           <>
             {data.error && (
-              <p className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs leading-relaxed text-destructive">
-                {data.error}
-              </p>
+              <div className="mb-space-md">
+                <SectionMessage
+                  appearance="danger"
+                  title="This run failed"
+                  IconComponent={Icon}
+                >
+                  {data.error}
+                </SectionMessage>
+              </div>
             )}
             <RunTrace steps={data.steps} />
           </>
@@ -89,17 +99,17 @@ export default function RunsPage() {
       <PageHeader title="Activity" subtitle="Every run, and what it did" />
 
       {isLoading ? (
-        <div className="mx-auto w-full max-w-2xl space-y-3 p-4">
-          <Skeleton className="h-24 rounded-2xl" />
-          <Skeleton className="h-24 rounded-2xl" />
+        <div className="mx-auto w-full max-w-2xl space-y-space-sm p-space-md">
+          <Skeleton className="h-24 rounded-md" />
+          <Skeleton className="h-24 rounded-md" />
         </div>
       ) : data && data.length > 0 ? (
         <div className="flex min-h-0 flex-1">
           <div
             className={
               isDesktop
-                ? "scroll-region w-96 shrink-0 overflow-y-auto border-r border-border p-4"
-                : "mx-auto w-full max-w-2xl p-4"
+                ? "scroll-region w-96 shrink-0 overflow-y-auto border-r border-border p-space-md"
+                : "mx-auto w-full max-w-2xl p-space-md"
             }
           >
             <RunList
@@ -116,13 +126,15 @@ export default function RunsPage() {
           )}
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-20 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-            <History className="size-6" />
-          </span>
+        <div className="flex flex-1 flex-col items-center justify-center gap-space-sm px-space-lg py-space-xxl text-center">
+          <IconTile
+            appearance="neutral"
+            size={48}
+            icon={<Icon name="Clock" size={16} />}
+          />
           <div>
-            <p className="text-sm font-medium">No runs yet</p>
-            <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+            <p className="font-display text-title-sm text-ink">No runs yet</p>
+            <p className="mt-space-xxs max-w-sm text-caption text-muted">
               Every chat and every scheduled automation records what it did
               here — the tools it called, the results it got, and where it
               stopped.

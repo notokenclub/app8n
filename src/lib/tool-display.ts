@@ -1,36 +1,12 @@
-import {
-  Archive,
-  CalendarClock,
-  CalendarPlus,
-  CalendarRange,
-  CalendarX2,
-  ChartColumn,
-  CircleCheckBig,
-  FilePen,
-  FilePlus2,
-  FileSpreadsheet,
-  FileText,
-  FolderSearch,
-  ListTodo,
-  Mail,
-  MailCheck,
-  MailOpen,
-  PenLine,
-  Rows3,
-  Search,
-  Send,
-  Table2,
-  Wrench,
-  Workflow,
-  type LucideIcon,
-} from "lucide-react";
+import type { IconName } from "@/ds";
 
 export interface ToolDisplay {
   /** Shown while the call is in flight, e.g. "Searching Gmail…". */
   active: string;
   /** Shown once the result is back, e.g. "Searched Gmail". */
   done: string;
-  icon: LucideIcon;
+  /** A glyph name from the design system's curated utility set. */
+  icon: IconName;
 }
 
 /**
@@ -45,124 +21,139 @@ export const TOOL_DISPLAY: Record<string, ToolDisplay> = {
   gmail_search_messages: {
     active: "Searching Gmail",
     done: "Searched Gmail",
-    icon: Search,
+    icon: "Filter",
   },
   gmail_get_message: {
     active: "Opening message",
     done: "Read message",
-    icon: MailOpen,
+    icon: "Inbox",
   },
   gmail_draft_email: {
     active: "Drafting email",
     done: "Drafted email",
-    icon: PenLine,
+    icon: "Edit",
   },
   gmail_send_email: {
     active: "Sending email",
     done: "Sent email",
-    icon: Send,
+    icon: "Email",
   },
   gmail_mark_read: {
     active: "Marking as read",
     done: "Marked as read",
-    icon: MailCheck,
+    icon: "CheckCircle",
   },
   gmail_archive_message: {
     active: "Archiving message",
     done: "Archived message",
-    icon: Archive,
+    icon: "FolderClosed",
   },
   calendar_list_events: {
     active: "Checking calendar",
     done: "Checked calendar",
-    icon: CalendarRange,
+    icon: "Calendar",
   },
   calendar_find_conflicts: {
     active: "Looking for conflicts",
     done: "Checked for conflicts",
-    icon: CalendarClock,
+    icon: "Clock",
   },
   calendar_create_event: {
     active: "Creating event",
     done: "Created event",
-    icon: CalendarPlus,
+    icon: "Add",
   },
   calendar_delete_event: {
     active: "Deleting event",
     done: "Deleted event",
-    icon: CalendarX2,
+    icon: "Delete",
   },
   calendar_attendance_metrics: {
     active: "Calculating attendance",
     done: "Calculated attendance",
-    icon: ChartColumn,
+    icon: "ChartBar",
   },
   sheets_read_range: {
     active: "Reading spreadsheet",
     done: "Read spreadsheet",
-    icon: Table2,
+    icon: "Grid",
   },
   sheets_find_rows: {
     active: "Searching spreadsheet",
     done: "Searched spreadsheet",
-    icon: Search,
+    icon: "Filter",
   },
   sheets_append_row: {
     active: "Adding a row",
     done: "Added a row",
-    icon: Rows3,
+    icon: "ListBulleted",
   },
   sheets_create_spreadsheet: {
     active: "Creating spreadsheet",
     done: "Created spreadsheet",
-    icon: FileSpreadsheet,
+    icon: "Grid",
   },
   docs_create: {
     active: "Creating doc",
     done: "Created doc",
-    icon: FilePlus2,
+    icon: "File",
   },
   docs_append_text: {
     active: "Editing doc",
     done: "Edited doc",
-    icon: FilePen,
+    icon: "Edit",
   },
   docs_read: {
     active: "Reading doc",
     done: "Read doc",
-    icon: FileText,
+    icon: "File",
   },
   drive_search: {
     active: "Searching Drive",
     done: "Searched Drive",
-    icon: FolderSearch,
+    icon: "FolderOpen",
   },
   tasks_list: {
     active: "Checking tasks",
     done: "Checked tasks",
-    icon: ListTodo,
+    icon: "ListChecklist",
   },
   tasks_create: {
     active: "Creating task",
     done: "Created task",
-    icon: ListTodo,
+    icon: "ListChecklist",
   },
   tasks_complete: {
     active: "Completing task",
     done: "Completed task",
-    icon: CircleCheckBig,
+    icon: "CheckCircle",
   },
   workflow_save: {
     active: "Saving automation",
     done: "Saved automation",
-    icon: Workflow,
+    icon: "DataFlow",
+  },
+  workflow_list: {
+    active: "Checking automations",
+    done: "Checked automations",
+    icon: "ListBulleted",
+  },
+  workflow_set_status: {
+    active: "Updating automation",
+    done: "Updated automation",
+    icon: "Edit",
+  },
+  workflow_delete: {
+    active: "Deleting automation",
+    done: "Deleted automation",
+    icon: "Delete",
   },
 };
 
 const FALLBACK: ToolDisplay = {
   active: "Working",
   done: "Done",
-  icon: Wrench,
+  icon: "Automation",
 };
 
 /** Never throws on an unknown name, so a new tool degrades to a generic pill. */
@@ -175,12 +166,12 @@ export function toolService(toolName: string): string {
   return toolName.split("_")[0] ?? "";
 }
 
-export const SERVICE_ICONS: Record<string, LucideIcon> = {
-  gmail: Mail,
-  calendar: CalendarRange,
-  sheets: FileSpreadsheet,
-  docs: FileText,
-  drive: FolderSearch,
-  tasks: ListTodo,
-  workflow: Workflow,
+export const SERVICE_ICONS: Record<string, IconName> = {
+  gmail: "Email",
+  calendar: "Calendar",
+  sheets: "Grid",
+  docs: "File",
+  drive: "FolderOpen",
+  tasks: "ListChecklist",
+  workflow: "DataFlow",
 };

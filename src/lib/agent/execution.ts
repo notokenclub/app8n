@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   executionLogs,
@@ -191,4 +191,36 @@ export function toExecutionSummary({
     finishedAt: execution.finishedAt?.toISOString() ?? null,
     createdAt: execution.createdAt.toISOString(),
   };
+}
+
+/**
+ * How long a run may stay `running` before the scheduler calls it dead.
+ *
+ * A process killed mid-run cannot close its own row, so without this sweep a
+ * crash leaves a run that claims to be in progress for ever — and a client
+ * that polls it. Generous enough that a slow legitimate run is never caught:
+ * the agent is capped at 12 steps.
+ */
+export const STALE_RUN_MS = 15 * 60 * 1000;
+
+export async function failStaleExecutions(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - STALE_RUN_MS);
+
+  const stale = await db
+    .update(executionLogs)
+    .set({
+      status: "failed",
+      errorTrace:
+        "The run did not finish — the process that started it went away.",
+      finishedAt: now,
+    })
+    .where(
+      and(
+        inArray(executionLogs.status, ["running"]),
+        lt(executionLogs.startedAt, cutoff),
+      ),
+    )
+    .returning({ id: executionLogs.id });
+
+  return stale.length;
 }

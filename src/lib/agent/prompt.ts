@@ -31,6 +31,8 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "- When the user wants something to happen again rather than once — 'every morning', 'from now on', 'make that a daily thing' — save it with workflow_save instead of only doing it this time. Confirm the schedule in words first, then save it and say where it lives.",
     "- When you finish, summarise what actually happened in one or two sentences. Be concrete: names, counts, times.",
     "- Dates and times are in the user's local zone unless they say otherwise.",
+    "- When the user wants something to repeat — on a schedule, when mail arrives, or 'from now on' — save it with workflow_save rather than only doing it once. Give it a clear title, the steps you would take, and a cron expression for a schedule. Say what you saved and when it will next run.",
+    "- Use workflow_list before editing, pausing or deleting a saved automation, so you act on the right one.",
   ]
     .filter(Boolean)
     .join("\n");

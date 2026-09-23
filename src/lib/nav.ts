@@ -1,16 +1,10 @@
-import {
-  History,
-  LayoutGrid,
-  MessagesSquare,
-  Settings2,
-  ShieldCheck,
-  type LucideIcon,
-} from "lucide-react";
+import type { IconName } from "@/ds";
 
 export interface NavItem {
   href: string;
   label: string;
-  icon: LucideIcon;
+  /** A glyph from the design system's curated 16px utility set. */
+  icon: IconName;
   /** Longer label for the desktop sidebar, where there is room for it. */
   description: string;
 }
@@ -24,31 +18,31 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/",
     label: "Chat",
-    icon: MessagesSquare,
+    icon: "ChatWidget",
     description: "Ask app8n to do things",
   },
   {
     href: "/approvals",
     label: "Approvals",
-    icon: ShieldCheck,
+    icon: "LockLocked",
     description: "Actions waiting on you",
   },
   {
     href: "/workflows",
     label: "Blueprints",
-    icon: LayoutGrid,
+    icon: "DataFlow",
     description: "Saved and scheduled automations",
   },
   {
     href: "/runs",
     label: "Activity",
-    icon: History,
+    icon: "Clock",
     description: "What every run actually did",
   },
   {
     href: "/settings",
     label: "Settings",
-    icon: Settings2,
+    icon: "Component",
     description: "Accounts, keys and the vault",
   },
 ];

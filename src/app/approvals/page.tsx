@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import { Icon, IconTile, SectionMessage } from "@/ds";
 import { ApprovalCard } from "@/components/approvals/approval-card";
 import { PageHeader } from "@/components/shell/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,32 +28,38 @@ export default function ApprovalsPage() {
         }
       />
 
-      <div className="mx-auto w-full max-w-2xl flex-1 space-y-3 p-4">
+      <div className="mx-auto w-full max-w-2xl flex-1 space-y-space-sm p-space-md">
         {isLoading && (
           <>
-            <Skeleton className="h-64 rounded-2xl" />
-            <Skeleton className="h-64 rounded-2xl" />
+            <Skeleton className="h-64 rounded-md" />
+            <Skeleton className="h-64 rounded-md" />
           </>
         )}
 
         {isError && (
-          <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {error instanceof Error
-              ? error.message
-              : "Could not load pending approvals."}
-          </p>
+          <SectionMessage
+            appearance="danger"
+            title="Could not load pending approvals"
+            IconComponent={Icon}
+          >
+            {error instanceof Error ? error.message : "The request failed."}
+          </SectionMessage>
         )}
 
         {data?.length === 0 && (
-          <div className="flex flex-col items-center gap-3 py-20 text-center">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-              <ShieldCheck className="size-6" />
-            </span>
+          <div className="flex flex-col items-center gap-space-sm py-space-xxl text-center">
+            <IconTile
+              appearance="neutral"
+              size={48}
+              icon={<Icon name="Inbox" size={16} />}
+            />
             <div>
-              <p className="text-sm font-medium">Nothing waiting</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="font-display text-title-sm text-ink">
+                Nothing waiting
+              </p>
+              <p className="mt-space-xxs text-caption text-muted">
                 High-impact actions — sending mail, deleting events, editing
-                docs — will land here before they run.
+                docs — land here before they run.
               </p>
             </div>
           </div>

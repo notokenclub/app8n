@@ -1,6 +1,6 @@
 "use client";
 
-import { BellOff, BellRing, Smartphone } from "lucide-react";
+import { Icon, IconTile, SectionMessage } from "@/ds";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePushStatus } from "@/hooks/use-push";
 import { isNative } from "@/lib/mobile/native";
@@ -22,46 +22,56 @@ const PLATFORM_LABELS: Record<string, string> = {
 export function PushNotifications() {
   const { data, isLoading } = usePushStatus();
 
-  if (isLoading) return <Skeleton className="h-20 rounded-2xl" />;
+  if (isLoading) return <Skeleton className="h-20 rounded-md" />;
   if (!data) return null;
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex items-start gap-3 rounded-2xl border border-border bg-card p-3.5">
-        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          {data.configured ? (
-            <BellRing className="size-4" />
-          ) : (
-            <BellOff className="size-4" />
-          )}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">
-            {data.configured
-              ? "Push delivery is configured"
-              : "No push provider configured"}
-          </p>
-          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-            {data.configured
-              ? "Approval gates raised by scheduled runs are sent to your registered devices."
-              : "Set APP8N_FCM_SERVICE_ACCOUNT on the backend to deliver approval gates to your phone. Until then the Approvals tab is the only channel."}
-          </p>
+    <div className="space-y-space-sm">
+      {data.configured ? (
+        <div className="flex items-start gap-space-sm rounded-md border border-hairline bg-canvas p-space-sm">
+          <IconTile
+            appearance="neutral"
+            size={32}
+            icon={<Icon name="Megaphone" size={16} />}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-body-md font-medium text-ink">
+              Push delivery is configured
+            </p>
+            <p className="mt-space-xxs text-caption leading-relaxed text-body">
+              Approval gates raised by scheduled runs are sent to your
+              registered devices.
+            </p>
+          </div>
         </div>
-      </div>
+      ) : (
+        <SectionMessage
+          appearance="information"
+          title="No push provider configured"
+          IconComponent={Icon}
+        >
+          Set <code className="text-caption">APP8N_FCM_SERVICE_ACCOUNT</code> on
+          the backend to deliver approval gates to your phone, or
+          <code className="text-caption"> APP8N_NOTIFY_WEBHOOK_URL</code> to send
+          them to any webhook. Until then the approvals tab is the only channel.
+        </SectionMessage>
+      )}
 
       {data.devices.length > 0 ? (
-        <ul className="space-y-2">
+        <ul className="space-y-space-xs">
           {data.devices.map((device) => (
             <li
               key={device.id}
-              className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3.5"
+              className="flex items-center gap-space-sm rounded-md border border-hairline bg-canvas p-space-sm"
             >
-              <Smartphone className="size-4 shrink-0 text-muted-foreground" />
+              <span className="shrink-0 text-muted">
+                <Icon name="ChatWidget" size={16} />
+              </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
+                <p className="truncate text-body-md font-medium text-ink">
                   {PLATFORM_LABELS[device.platform] ?? device.platform}
                 </p>
-                <p className="truncate text-xs text-muted-foreground">
+                <p className="truncate text-caption text-muted">
                   {device.tokenHint}
                   {device.lastSeenAt &&
                     ` · last seen ${new Date(device.lastSeenAt).toLocaleDateString(undefined, {
@@ -74,7 +84,7 @@ export function PushNotifications() {
           ))}
         </ul>
       ) : (
-        <p className="px-1 text-xs leading-relaxed text-muted-foreground">
+        <p className="px-space-xxs text-caption leading-relaxed text-muted">
           {isNative()
             ? "This device has not registered yet. Allow notifications when prompted."
             : "No devices registered. Open app8n on your phone to receive approval alerts."}

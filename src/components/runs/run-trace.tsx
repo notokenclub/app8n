@@ -1,14 +1,8 @@
 "use client";
 
 import * as React from "react";
-import {
-  AlertCircle,
-  ChevronDown,
-  CircleCheckBig,
-  MessageSquareText,
-  ShieldAlert,
-} from "lucide-react";
 import { cn } from "cn";
+import { Icon, LogConsole, TextBadge, type IconName } from "@/ds";
 import type { ExecutionStep } from "@/lib/db/schema";
 import { toolDisplay } from "@/lib/tool-display";
 import { summariseResult } from "@/lib/tool-result";
@@ -22,14 +16,14 @@ function timeOf(at: number): string {
 }
 
 function StepRow({
-  icon: Icon,
+  icon,
   tone,
   title,
   detail,
   at,
   children,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconName;
   tone?: "error" | "warning";
   title: string;
   detail?: string;
@@ -37,35 +31,37 @@ function StepRow({
   children?: React.ReactNode;
 }) {
   return (
-    <li className="relative flex gap-3 pb-4 last:pb-0">
+    <li className="relative flex gap-space-sm pb-space-md last:pb-0">
       {/* The rail is drawn per row rather than as one absolute element so the
           list stays correct when a row wraps to two lines. */}
       <span
         aria-hidden
-        className="absolute top-7 bottom-0 left-[0.6875rem] w-px bg-border"
+        className="absolute top-7 bottom-0 left-[0.6875rem] w-px bg-hairline"
       />
       <span
         className={cn(
-          "relative z-10 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border bg-card",
+          "relative z-10 mt-space-xxs flex size-6 shrink-0 items-center justify-center rounded-full border bg-canvas",
           tone === "error"
-            ? "border-destructive/40 text-destructive"
+            ? "border-danger text-danger"
             : tone === "warning"
-              ? "border-amber-500/40 text-amber-400"
-              : "border-border text-muted-foreground",
+              ? "border-primary text-primary"
+              : "border-hairline text-muted",
         )}
       >
-        <Icon className="size-3" />
+        <Icon name={icon} size={16} />
       </span>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <p className="min-w-0 flex-1 text-sm font-medium">{title}</p>
-          <span className="shrink-0 text-[0.625rem] tabular-nums text-muted-foreground">
+        <div className="flex items-baseline gap-space-xs">
+          <p className="min-w-0 flex-1 text-body-md font-medium text-ink">
+            {title}
+          </p>
+          <span className="shrink-0 text-legal tabular-nums text-muted">
             {timeOf(at)}
           </span>
         </div>
         {detail && (
-          <p className="mt-0.5 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          <p className="mt-space-xxs text-caption leading-relaxed whitespace-pre-wrap text-body">
             {detail}
           </p>
         )}
@@ -80,12 +76,12 @@ function ResultPreview({ output }: { output: unknown }) {
   const summary = summariseResult(output);
 
   if (summary.kind === "empty") {
-    return <p className="mt-1 text-xs text-muted-foreground">No results.</p>;
+    return <p className="mt-space-xxs text-caption text-muted">No results.</p>;
   }
 
   if (summary.kind === "note") {
     return (
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+      <p className="mt-space-xxs text-caption leading-relaxed text-muted">
         {summary.note}
       </p>
     );
@@ -93,43 +89,49 @@ function ResultPreview({ output }: { output: unknown }) {
 
   if (summary.kind === "raw") {
     return (
-      <div className="mt-1">
+      <div className="mt-space-xxs">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-space-xxs text-caption text-muted hover:text-foreground"
         >
-          <ChevronDown
-            className={cn("size-3 transition-transform", open && "rotate-180")}
-          />
+          <span className={cn("inline-flex transition-transform", open && "rotate-180")}>
+            <Icon name="ChevronDown" size={16} />
+          </span>
           {open ? "Hide" : "Show"} raw result
         </button>
+        {/* Machine output goes in the system's log console rather than a
+            styled <pre>: same face, same surface as the worker's own logs. */}
         {open && (
-          <pre className="mt-1 max-h-56 overflow-auto rounded-lg border border-border bg-muted/40 p-2 text-[0.625rem] leading-relaxed">
-            {summary.raw}
-          </pre>
+          <div className="scroll-region mt-space-xxs max-h-56 overflow-auto">
+            <LogConsole
+              lines={(summary.raw ?? "")
+                .split("\n")
+                .map((text) => ({ time: "", text, level: "info" as const }))}
+            />
+          </div>
         )}
       </div>
     );
   }
 
   return (
-    <ul className="mt-1 space-y-1">
+    <ul className="mt-space-xxs space-y-space-xxs">
       {summary.rows.map((row) => (
         <li
           key={row.key}
-          className="rounded-lg border border-border bg-muted/30 px-2 py-1.5"
+          className="rounded-sm border border-hairline bg-surface-soft px-space-xs py-space-xxs"
         >
-          <p className="truncate text-xs font-medium">{row.title}</p>
+          <p className="truncate text-caption font-medium text-ink">
+            {row.title}
+          </p>
           {row.subtitle && (
-            <p className="truncate text-[0.625rem] text-muted-foreground">
-              {row.subtitle}
-            </p>
+            <p className="truncate text-legal text-muted">{row.subtitle}</p>
           )}
         </li>
       ))}
       {summary.count !== undefined && summary.count > summary.rows.length && (
-        <li className="text-[0.625rem] text-muted-foreground">
+        <li className="text-legal text-muted">
           +{summary.count - summary.rows.length} more
         </li>
       )}
@@ -147,7 +149,7 @@ function ResultPreview({ output }: { output: unknown }) {
 export function RunTrace({ steps }: { steps: ExecutionStep[] }) {
   if (steps.length === 0) {
     return (
-      <p className="px-1 py-6 text-center text-xs text-muted-foreground">
+      <p className="px-space-xxs py-space-lg text-center text-caption text-muted">
         This run recorded no steps.
       </p>
     );
@@ -162,7 +164,7 @@ export function RunTrace({ steps }: { steps: ExecutionStep[] }) {
           return (
             <StepRow
               key={key}
-              icon={MessageSquareText}
+              icon="Comment"
               title="Agent said"
               detail={step.text}
               at={step.at}
@@ -185,7 +187,7 @@ export function RunTrace({ steps }: { steps: ExecutionStep[] }) {
           return (
             <StepRow
               key={key}
-              icon={CircleCheckBig}
+              icon="CheckCircle"
               title={toolDisplay(step.toolName).done}
               at={step.at}
             >
@@ -198,19 +200,23 @@ export function RunTrace({ steps }: { steps: ExecutionStep[] }) {
           return (
             <StepRow
               key={key}
-              icon={ShieldAlert}
+              icon="LockLocked"
               tone="warning"
               title="Paused for approval"
               detail={toolDisplay(step.toolName).done}
               at={step.at}
-            />
+            >
+              <span className="mt-space-xxs inline-flex">
+                <TextBadge tone="primary">human decision</TextBadge>
+              </span>
+            </StepRow>
           );
         }
 
         return (
           <StepRow
             key={key}
-            icon={AlertCircle}
+            icon="Alert"
             tone="error"
             title="Error"
             detail={step.message}

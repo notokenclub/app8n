@@ -2,18 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import {
-  AlertTriangle,
-  Ban,
-  Check,
-  Pencil,
-  RotateCcw,
-  ShieldAlert,
-  X,
-} from "lucide-react";
 import { cn } from "cn";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge, Button, Divider, Icon, IconTile } from "@/ds";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/client-api";
 import { describeAction, formatValue, parseEditedValue } from "@/lib/approval-format";
@@ -141,11 +131,11 @@ export function ApprovalCard({
     return (
       <div
         className={cn(
-          "flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground",
+          "flex items-center gap-space-xs rounded-md border border-border bg-surface-soft px-space-sm py-space-xs text-body-md text-muted",
           className,
         )}
       >
-        <Ban className="size-4 shrink-0" />
+        <Icon name="Cross" size={16} />
         {gone}
       </div>
     );
@@ -155,18 +145,14 @@ export function ApprovalCard({
     return (
       <div
         className={cn(
-          "flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm",
+          "flex items-center gap-space-xs rounded-md border border-border px-space-sm py-space-xs text-body-md",
           settled === "approved"
-            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-            : "border-border bg-muted/40 text-muted-foreground",
+            ? "bg-canvas text-success"
+            : "bg-surface-soft text-muted",
           className,
         )}
       >
-        {settled === "approved" ? (
-          <Check className="size-4 shrink-0" />
-        ) : (
-          <X className="size-4 shrink-0" />
-        )}
+        <Icon name={settled === "approved" ? "CheckCircle" : "Cross"} size={16} />
         {settled === "approved" ? display.done : "Rejected"}
       </div>
     );
@@ -182,44 +168,48 @@ export function ApprovalCard({
   return (
     <div
       className={cn(
-        // Amber framing, not the app's neutral card surface: this is the one
-        // thing on screen that must not be skimmed past.
-        "overflow-hidden rounded-2xl border border-amber-500/40 bg-amber-500/[0.06] shadow-sm",
+        // A flame-subtle colour block, not a shadow: this is the one thing on
+        // screen that must not be skimmed past, and the system builds emphasis
+        // out of colour blocks.
+        "overflow-hidden rounded-md border border-primary bg-primary-subtle",
         className,
       )}
     >
-      <div className="flex items-start gap-3 border-b border-amber-500/20 bg-amber-500/10 px-4 py-3">
-        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-300">
-          <ShieldAlert className="size-4" />
-        </span>
+      <div className="flex items-start gap-space-sm border-b border-hairline px-space-md py-space-sm">
+        <IconTile
+          appearance="ember"
+          size={32}
+          icon={<Icon name="LockLocked" size={16} />}
+        />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-amber-100">
+          <p className="font-display text-title-sm text-ink">
             Needs your approval
           </p>
-          <p className="truncate text-xs text-amber-200/70">
+          <p className="truncate text-caption text-body">
             {approval.summary || description.headline}
           </p>
         </div>
-        <Badge
-          variant="outline"
-          className="shrink-0 border-amber-500/30 text-amber-200"
-        >
-          <display.icon />
-          {description.title}
-        </Badge>
+        <span className="shrink-0">
+          <Badge tone="primary">
+            <span className="inline-flex items-center gap-space-xxs">
+              <Icon name={display.icon} size={16} />
+              {display.active}
+            </span>
+          </Badge>
+        </span>
       </div>
 
-      <div className="space-y-3 px-4 py-3">
+      <div className="space-y-space-sm bg-canvas px-space-md py-space-sm">
         {description.fields.length === 0 && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-body-md text-muted">
             This action takes no parameters.
           </p>
         )}
 
         {description.fields.map((field) =>
           editing ? (
-            <label key={field.key} className="block space-y-1">
-              <span className="text-xs font-medium text-muted-foreground">
+            <label key={field.key} className="block space-y-space-xxs">
+              <span className="text-caption font-medium text-muted">
                 {field.label}
               </span>
               <Textarea
@@ -231,10 +221,7 @@ export function ApprovalCard({
                     [field.key]: event.target.value,
                   }))
                 }
-                className={cn(
-                  "bg-background/60",
-                  field.kind === "inline" && "min-h-9 py-1.5",
-                )}
+                className={cn(field.kind === "inline" && "min-h-9 py-space-xxs")}
               />
             </label>
           ) : (
@@ -242,23 +229,23 @@ export function ApprovalCard({
               key={field.key}
               className={cn(
                 field.kind === "inline" &&
-                  "flex items-baseline gap-3 text-sm leading-6",
+                  "flex items-baseline gap-space-sm text-body-md",
               )}
             >
               <span
                 className={cn(
-                  "text-xs font-medium text-muted-foreground",
+                  "text-caption font-medium text-muted",
                   field.kind === "inline" && "w-20 shrink-0",
                 )}
               >
                 {field.label}
               </span>
               {field.kind === "body" ? (
-                <p className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-foreground scroll-region">
+                <p className="scroll-region mt-space-xxs max-h-40 overflow-y-auto rounded-sm border border-hairline bg-surface-soft px-space-sm py-space-xs text-body-md leading-relaxed whitespace-pre-wrap text-ink">
                   {field.value}
                 </p>
               ) : (
-                <span className="min-w-0 flex-1 break-words text-foreground">
+                <span className="min-w-0 flex-1 break-words text-ink">
                   {field.value}
                 </span>
               )}
@@ -267,14 +254,16 @@ export function ApprovalCard({
         )}
 
         {expiresSoon && approval.expiresAt && (
-          <p className="flex items-center gap-1.5 text-xs text-amber-300">
-            <AlertTriangle className="size-3.5" />
+          <p className="flex items-center gap-space-xs text-caption text-danger">
+            <Icon name="Alert" size={16} />
             Expires {relativeTime(approval.expiresAt, now)}
           </p>
         )}
       </div>
 
-      <div className="space-y-2 border-t border-amber-500/20 px-4 py-3">
+      <Divider tone="hairline" />
+
+      <div className="space-y-space-xs bg-canvas px-space-md py-space-sm">
         <SwipeConfirm
           label={editing ? "Swipe to send edited" : "Swipe to approve"}
           confirmedLabel="Approved"
@@ -282,30 +271,28 @@ export function ApprovalCard({
           disabled={resolve.isPending}
           onConfirm={() => submit(true)}
         />
-        <div className="flex gap-2">
+        <div className="flex gap-space-xs [&>*]:flex-1">
           <Button
-            variant="outline"
-            size="lg"
-            className="flex-1"
+            variant="secondary"
+            size="sm"
             disabled={resolve.isPending}
             onClick={() => (editing ? setEditing(false) : startEditing())}
+            icon={<Icon name={editing ? "Cross" : "Edit"} size={16} />}
           >
-            {editing ? <RotateCcw /> : <Pencil />}
             {editing ? "Discard edits" : "Edit parameters"}
           </Button>
           <Button
-            variant="destructive"
-            size="lg"
-            className="flex-1"
+            variant="ghost"
+            size="sm"
             disabled={resolve.isPending}
             onClick={() => submit(false)}
+            icon={<Icon name="CrossCircle" size={16} />}
           >
-            <X />
             Reject
           </Button>
         </div>
         {approval.createdAt && now > 0 && (
-          <p className="text-center text-[0.625rem] text-muted-foreground">
+          <p className="text-center text-legal text-muted">
             Requested {relativeTime(approval.createdAt, now)}
           </p>
         )}

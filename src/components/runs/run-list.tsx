@@ -1,61 +1,36 @@
 "use client";
 
-import {
-  CalendarClock,
-  CircleCheckBig,
-  CircleDot,
-  CircleSlash,
-  Hand,
-  Loader2,
-  Mail,
-  MessagesSquare,
-  ShieldAlert,
-  TriangleAlert,
-  Webhook,
-  type LucideIcon,
-} from "lucide-react";
 import { cn } from "cn";
-import { Badge } from "@/components/ui/badge";
+import { Badge, Icon, IconTile, type IconName } from "@/ds";
 import type { ExecutionStatus, TriggerType } from "@/lib/db/schema";
 import type { ExecutionSummary } from "@/hooks/use-executions";
 
-const TRIGGER_ICONS: Record<TriggerType, LucideIcon> = {
-  manual: Hand,
-  chat: MessagesSquare,
-  cron: CalendarClock,
-  webhook: Webhook,
-  gmail_poll: Mail,
+const TRIGGER_ICONS: Record<TriggerType, IconName> = {
+  manual: "CheckMark",
+  chat: "ChatWidget",
+  cron: "Clock",
+  webhook: "Link",
+  gmail_poll: "Email",
 };
 
+/** Status maps onto the four badge tones the system defines, and nothing else. */
 const STATUS_META: Record<
   ExecutionStatus,
-  { label: string; icon: LucideIcon; className: string }
+  {
+    label: string;
+    icon: IconName;
+    tone: "neutral" | "primary" | "success" | "danger";
+  }
 > = {
-  running: {
-    label: "running",
-    icon: Loader2,
-    className: "border-sky-500/30 bg-sky-500/10 text-sky-300",
-  },
+  running: { label: "running", icon: "Clock", tone: "primary" },
   awaiting_approval: {
     label: "awaiting approval",
-    icon: ShieldAlert,
-    className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    icon: "LockLocked",
+    tone: "primary",
   },
-  success: {
-    label: "success",
-    icon: CircleCheckBig,
-    className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  },
-  failed: {
-    label: "failed",
-    icon: TriangleAlert,
-    className: "border-destructive/30 bg-destructive/10 text-destructive",
-  },
-  cancelled: {
-    label: "cancelled",
-    icon: CircleSlash,
-    className: "border-border bg-muted/50 text-muted-foreground",
-  },
+  success: { label: "succeeded", icon: "CheckCircle", tone: "success" },
+  failed: { label: "failed", icon: "Alert", tone: "danger" },
+  cancelled: { label: "cancelled", icon: "Cross", tone: "neutral" },
 };
 
 function duration(ms: number | null): string | null {
@@ -84,10 +59,9 @@ export function RunList({
   onSelect: (run: ExecutionSummary) => void;
 }) {
   return (
-    <ul className="space-y-2">
+    <ul className="space-y-space-xs">
       {runs.map((run) => {
         const status = STATUS_META[run.status];
-        const TriggerIcon = TRIGGER_ICONS[run.trigger] ?? CircleDot;
         const took = duration(run.durationMs);
         const selected = selectedId === run.id;
 
@@ -97,41 +71,44 @@ export function RunList({
               type="button"
               onClick={() => onSelect(run)}
               className={cn(
-                "w-full rounded-2xl border bg-card p-3.5 text-left transition-colors hover:border-primary/30",
-                selected ? "border-primary/50" : "border-border",
+                "w-full rounded-md border bg-canvas p-space-sm text-left transition-colors hover:border-border-strong",
+                selected ? "border-primary" : "border-hairline",
               )}
             >
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <TriggerIcon className="size-4" />
-                </span>
+              <div className="flex items-start gap-space-sm">
+                <IconTile
+                  appearance="neutral"
+                  size={32}
+                  icon={
+                    <Icon
+                      name={TRIGGER_ICONS[run.trigger] ?? "Automation"}
+                      size={16}
+                    />
+                  }
+                />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
+                  <p className="truncate text-body-md font-medium text-ink">
                     {/* A chat run has no workflow, and calling that "Untitled"
                         would imply something was meant to be there. */}
                     {run.workflowTitle ?? "Chat session"}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="truncate text-caption text-muted">
                     {when(run.createdAt)}
                     {took && ` · ${took}`}
                   </p>
                 </div>
-                <Badge
-                  variant="outline"
-                  className={cn("shrink-0 gap-1", status.className)}
-                >
-                  <status.icon
-                    className={cn(
-                      "size-3",
-                      run.status === "running" && "animate-spin",
-                    )}
-                  />
-                  {status.label}
-                </Badge>
+                <span className="shrink-0">
+                  <Badge tone={status.tone}>
+                    <span className="inline-flex items-center gap-space-xxs">
+                      <Icon name={status.icon} size={16} />
+                      {status.label}
+                    </span>
+                  </Badge>
+                </span>
               </div>
 
               {run.error && (
-                <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-destructive">
+                <p className="mt-space-xs line-clamp-2 text-caption leading-relaxed text-danger">
                   {run.error}
                 </p>
               )}

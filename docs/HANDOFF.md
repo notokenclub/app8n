@@ -3,8 +3,11 @@
 Everything needed to pick this project up cold — what exists, why it was built this way,
 and where the seams are. If you're new, read this after the README.
 
-Current state: **Phases 1–6 complete.** Typecheck and lint clean, 8/8 vault checks,
-26/26 Google checks, 40/40 agent checks, production build succeeds with 18 routes.
+Current state: **Phases 1–6 complete, and deployable.** Typecheck, lint and
+design-system adherence clean; 8/8 vault checks, 26/26 Google checks, 48/48 agent checks;
+production build succeeds. The interface is built entirely from the Zelleo design system
+(`docs/DESIGN-SYSTEM.md`) and the backend ships as a container pair
+(`docs/DEPLOYMENT.md`).
 
 ---
 
@@ -165,7 +168,9 @@ rather than in the vault.
 
 ## 5. The tool registry
 
-22 tools in `src/lib/agent/tools.ts`. Approval is **derived, not hand-maintained**:
+25 tools in `src/lib/agent/tools.ts` — 21 Google connectors plus four `core` tools that
+act on app8n itself, which is what makes "make that a daily thing" produce a real
+automation rather than a promise. Approval is **derived, not hand-maintained**:
 
 ```ts
 requiresApproval: config.requiresApproval ?? config.impact === "external"
@@ -193,7 +198,7 @@ An unknown tool name gates rather than executes.
 | Docs | `docs_create`, **`docs_append_text`**, `docs_read` |
 | Drive | `drive_search` |
 | Tasks | `tasks_list`, `tasks_create`, `tasks_complete` |
-| Core | `workflow_save` |
+| Core | `workflow_save`, `workflow_list`, `workflow_set_status`, **`workflow_delete`** |
 
 **Bold** tools are gated by the HITL approval flow.
 
@@ -267,7 +272,8 @@ npm run typecheck
 npm run lint
 npm run vault:selftest      # 8 checks
 npm run google:selftest     # 26 checks
-npm run agent:selftest      # 40 checks
+npm run agent:selftest      # 48 checks
+npm run lint:ds             # design-system adherence
 
 npm run db:generate | db:migrate | db:push | db:studio
 npm run vault:keygen        # mint APP8N_ENCRYPTION_KEY
@@ -275,6 +281,9 @@ npm run vault:keygen        # mint APP8N_ENCRYPTION_KEY
 npm run cap:sync            # cap sync, then re-register the app8n:// deep link
 npm run cap:deeplink        # re-register the deep link on its own
 npm run cap:add:ios | cap:add:android | cap:open:ios | cap:open:android
+
+npm run build:worker        # bundle the scheduler for the image
+docker compose up -d --build
 ```
 
 Scripts use **relative** imports (`../src/lib/db`), not the `@/` alias — the alias is not
@@ -464,6 +473,52 @@ self-test caught this.
 
 ---
 
+### Design system
+
+The interface is built entirely from the Zelleo design system, vendored under `src/ds`
+and imported only through the `@/ds` barrel. Tokens — colour, spacing, radii, typography
+— are the only values any component may use, and `npm run lint:ds` enforces that against
+the system's own `_adherence.oxlintrc.json`. `docs/DESIGN-SYSTEM.md` is the reference,
+including the two traps: never pass `style` to a system component (it replaces their
+inline style wholesale), and the palette utilities must come from a plain `@theme`, not
+`@theme inline`, or the charcoal theme cannot re-point them.
+
+### Webhook triggers
+
+`webhook` was the one trigger type with no entry point. `POST /api/hooks/[id]`
+authenticates against a per-workflow secret minted into the vault and compared in
+constant time, answers 404 for a bad secret so the endpoint cannot enumerate workflow
+ids, and quotes the request body into the run as data explicitly labelled as
+not-instructions. Gated tools still stop at the approval card, so a webhook cannot talk
+the agent into sending mail. The secret is revealed once, from the blueprint card.
+
+### Runs that outlive their process
+
+A run that failed before its first step — a missing key, an unreachable provider — used
+to leave a row saying `running` for ever, because the model was resolved outside the
+orchestrator's `try`. `buildAgentConfig` now closes the row on the way out, and
+`failStaleExecutions` sweeps anything still `running` after 15 minutes on each worker
+tick, so a killed process cannot leave a ghost either.
+
+### Deployment
+
+`src/lib/env.ts` runs at boot through `src/instrumentation.ts` and **exits non-zero**
+rather than serving a deployment that is unprotected or misconfigured. Migrations are
+applied at boot by both processes. `src/proxy.ts` (Next's renamed `middleware`) gates
+every request behind `APP8N_ACCESS_TOKEN` when one is set, exempting `/api/health` and
+`/api/hooks/*`, which carry their own per-workflow secret. `/api/health` reports what is
+configured, never the values. The Dockerfile ships the server and a bundled scheduler
+(`npm run build:worker`) from one image, `docker-compose.yml` runs both, and CI runs the
+full gate plus an image build. `docs/DEPLOYMENT.md` is the operator's document.
+
+### Approval notifications without a push provider
+
+`APP8N_NOTIFY_WEBHOOK_URL` sends every background gate to any endpoint that accepts a
+JSON POST — ntfy, Slack, Discord, Home Assistant — so an approval raised at 7am reaches
+someone before a Firebase project exists. It runs alongside the FCM transport rather
+than replacing it.
+
+
 ## 12. Where to pick up
 
 1. **Generate and commit the native projects.** `cap add ios` needs macOS and Xcode;
@@ -485,12 +540,15 @@ self-test caught this.
    validates it through the same `saveWorkflow` the agent uses — so this is a UI job, not a
    backend one. No client hook is shipped for it deliberately: an unused one would be the
    dead code this codebase keeps warning about.
-5. **Local-model reliability.** Ollama works, but app8n's surface is 22 tools and a
+5. **Local-model reliability.** Ollama works, but app8n's surface is 25 tools and a
    multi-step approval gate, which small local models chain far less reliably than the
    hosted ones. `qwen2.5` is the default because it is the better tool caller, not the
    better writer. Worth measuring properly and documenting which local models actually
    hold up.
-6. **Approval expiry is done.** `expireStaleApprovals` sweeps on every worker tick and on
+6. **Postgres.** The schema is written for it, but the client is `better-sqlite3` only,
+   which is what caps a deployment at one web instance and one scheduler. See
+   §8 of `docs/DEPLOYMENT.md` for what that rules out.
+7. **Approval expiry is done.** `expireStaleApprovals` sweeps on every worker tick and on
    every `GET /api/approvals`, and `resolveApproval` re-checks inline, so an expired gate
    cannot execute even if the sweep never ran. The Phase 5 note listing this as missing was
    already stale.

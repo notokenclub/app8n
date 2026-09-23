@@ -251,7 +251,20 @@ The web app serves the UI and the chat endpoint. Scheduled and polling automatio
 npm run worker
 ```
 
-It's a plain Node process on a 30-second tick, deliberately not a Next.js primitive — your automations should keep firing whether or not a browser is open.
+It's a plain Node process on a 30-second tick, deliberately not a Next.js primitive — your automations should keep firing whether or not a browser is open. It also expires approval gates nobody answered and closes runs whose process went away.
+
+### Deploying it
+
+```bash
+cp .env.example .env          # fill in APP_URL, APP8N_ACCESS_TOKEN, the vault key
+docker compose up -d --build  # the backend and the scheduler
+curl -s localhost:3000/api/health
+```
+
+The server validates its environment at boot and refuses to start a production
+deployment that is unprotected or misconfigured, rather than failing later on a
+real request. Access control, notifications, webhook triggers, backups and the
+known scaling limits are all in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
 ---
 
@@ -283,6 +296,15 @@ Create an **OAuth 2.0 Web Application** client at [console.cloud.google.com](htt
 | `GOOGLE_CLIENT_SECRET` | OAuth client secret. |
 | `GOOGLE_REDIRECT_URI` | Must match Google exactly. `http://localhost:3000/api/auth/google/callback` for local dev. |
 | `APP8N_MOCK_GOOGLE` | Set to `1` to replace every connector with an in-memory fixture. |
+
+### Deployment
+
+| Variable | What it does |
+| --- | --- |
+| `APP8N_ACCESS_TOKEN` | Required once the backend is reachable by anything but your own machine: every request must present it, as `Authorization: Bearer …` or by opening `/?access_token=…` once. Generate with `openssl rand -base64 32`. |
+| `APP8N_ALLOW_UNAUTHENTICATED` | Skips that requirement for genuinely private networks. Logged loudly at boot. |
+| `APP8N_NOTIFY_WEBHOOK_URL` | Where approval gates go when nobody has the app open — any endpoint that accepts a JSON POST (ntfy, Slack, Discord, Home Assistant). Runs alongside native push rather than replacing it. |
+| `APP8N_AUTO_MIGRATE` | `0` to stop the server and worker migrating at boot, when a release step does it instead. |
 
 ### App and mobile
 

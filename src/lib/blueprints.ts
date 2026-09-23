@@ -186,7 +186,7 @@ const briefingNodes: BlueprintNode[] = [
 export const STARTER_BLUEPRINTS: Blueprint[] = [
   {
     key: "college-debar-assistant",
-    title: "College Debar & Schedule Assistant",
+    title: "College debar and schedule assistant",
     description:
       "Track attendance against the 75% debar threshold for every course on my timetable. Compute attended-over-held per course, flag any course that is below the threshold or within two sessions of falling below it, raise a task for each one, and draft an appeal to the faculty quoting the exact session counts and dates. Send it only after I approve.",
     triggerType: "cron",
@@ -200,7 +200,7 @@ export const STARTER_BLUEPRINTS: Blueprint[] = [
   },
   {
     key: "gmail-lead-pipeline",
-    title: "Gmail Lead to Google Sheets Pipeline",
+    title: "Gmail lead to Google Sheets pipeline",
     description:
       "When a new enquiry arrives in Gmail, read it, pull out the sender's name, email, company and what they are asking for, check the leads sheet so the same person is not filed twice, append a row, and mark the message read. Skip anything that is not a genuine enquiry.",
     triggerType: "gmail_poll",
@@ -211,7 +211,7 @@ export const STARTER_BLUEPRINTS: Blueprint[] = [
   },
   {
     key: "daily-briefing",
-    title: "Daily Calendar & Drive Briefing",
+    title: "Daily calendar and Drive briefing",
     description:
       "Every weekday morning, write me a briefing doc covering today's meetings, any double-bookings, the Drive documents attached to those meetings, and a short summary of mail that arrived overnight.",
     triggerType: "cron",

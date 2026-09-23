@@ -2,44 +2,23 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Sparkles } from "lucide-react";
 import { cn } from "cn";
+import { Icon, NumberBadge } from "@/ds";
 import { usePendingApprovals } from "@/hooks/use-approvals";
 import { usePushRegistration } from "@/hooks/use-push";
 import { isActivePath, NAV_ITEMS } from "@/lib/nav";
 
-/** Small count bubble on the Approvals tab. Hidden at zero. */
-function PendingBadge({
-  count,
-  className,
-}: {
-  count: number;
-  className?: string;
-}) {
-  if (count <= 0) return null;
-  return (
-    <span
-      className={cn(
-        "flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[0.625rem] font-semibold text-white tabular-nums",
-        className,
-      )}
-    >
-      {count > 9 ? "9+" : count}
-    </span>
-  );
-}
-
-function Sidebar({ pending }: { pending: number }) {
+function DesktopNav({ pending }: { pending: number }) {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-sidebar pl-safe-l md:flex">
-      <div className="flex h-14 items-center gap-2 px-4">
-        <Sparkles className="size-4 text-primary" />
-        <span className="text-sm font-semibold tracking-tight">app8n</span>
+    <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-background pl-safe-l md:flex">
+      <div className="flex h-14 items-center gap-space-xs px-space-md">
+        <Icon name="Automation" size={16} />
+        <span className="font-display text-title-sm">app8n</span>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 p-2">
+      <nav className="flex flex-1 flex-col gap-space-xxs p-space-xs">
         {NAV_ITEMS.map((item) => {
           const active = isActivePath(item.href, pathname);
           return (
@@ -48,21 +27,23 @@ function Sidebar({ pending }: { pending: number }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "group flex items-start gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                "flex items-start gap-space-sm rounded-sm px-space-sm py-space-xs transition-colors",
                 active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted hover:bg-secondary hover:text-foreground",
               )}
             >
-              <item.icon className="mt-0.5 size-4 shrink-0" />
-              <span className="flex-1 min-w-0">
-                <span className="flex items-center gap-2 font-medium">
+              <span className="mt-space-xxs shrink-0">
+                <Icon name={item.icon} size={16} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-space-xs text-body-md font-medium">
                   {item.label}
-                  {item.href === "/approvals" && (
-                    <PendingBadge count={pending} />
+                  {item.href === "/approvals" && pending > 0 && (
+                    <NumberBadge count={pending} tone="primary" max={9} />
                   )}
                 </span>
-                <span className="block truncate text-xs text-muted-foreground">
+                <span className="block truncate text-caption text-muted">
                   {item.description}
                 </span>
               </span>
@@ -71,7 +52,7 @@ function Sidebar({ pending }: { pending: number }) {
         })}
       </nav>
 
-      <p className="px-4 pb-4 text-[0.625rem] leading-relaxed text-muted-foreground">
+      <p className="px-space-md pb-space-md text-legal leading-relaxed text-muted">
         Local-first. Your credentials stay in an encrypted vault on this
         machine.
       </p>
@@ -85,8 +66,9 @@ function TabBar({ pending }: { pending: number }) {
   return (
     <nav
       // `pb-safe-b` clears the iOS home indicator; the bar's own height stays
-      // constant so the layout does not jump between devices.
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/85 pb-safe-b backdrop-blur-lg md:hidden"
+      // constant so the layout does not jump between devices. Flat canvas and
+      // a hairline, not a blur: this system has no glass surfaces.
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background pb-safe-b md:hidden"
     >
       <div
         className="mx-auto grid h-tabbar max-w-lg"
@@ -104,22 +86,16 @@ function TabBar({ pending }: { pending: number }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex flex-col items-center justify-center gap-1 text-[0.625rem] font-medium transition-colors",
-                active
-                  ? "text-foreground"
-                  : "text-muted-foreground active:text-foreground",
+                "relative flex flex-col items-center justify-center gap-space-xxs text-legal font-medium transition-colors",
+                active ? "text-primary" : "text-muted active:text-foreground",
               )}
             >
-              <span className="relative">
-                <item.icon
-                  className={cn("size-5", active && "text-primary")}
-                  strokeWidth={active ? 2.4 : 1.8}
-                />
-                {item.href === "/approvals" && (
-                  <PendingBadge
-                    count={pending}
-                    className="absolute -top-1 -right-2"
-                  />
+              <span className="relative flex items-center">
+                <Icon name={item.icon} size={16} />
+                {item.href === "/approvals" && pending > 0 && (
+                  <span className="absolute -top-space-xs -right-space-xs">
+                    <NumberBadge count={pending} tone="primary" max={9} />
+                  </span>
                 )}
               </span>
               {item.label}
@@ -132,7 +108,8 @@ function TabBar({ pending }: { pending: number }) {
 }
 
 /**
- * The app frame: a sidebar on tablet and desktop, a bottom tab bar on phones.
+ * The app frame: a navigation rail on tablet and desktop, a bottom tab bar on
+ * phones.
  *
  * Both navigations are always mounted and toggled with CSS rather than a
  * JavaScript breakpoint check, so the correct one is present in the very first
@@ -147,7 +124,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-dvh">
-      <Sidebar pending={pending} />
+      <DesktopNav pending={pending} />
 
       {/* The tab bar is fixed, so the main column reserves its height to keep
           the last line of content reachable above it. */}

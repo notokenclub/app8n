@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -24,7 +24,9 @@
     "cap:add:android": "cap add android",
     "cap:open:ios": "cap open ios",
     "cap:open:android": "cap open android",
-    "cap:deeplink": "tsx scripts/register-deep-link.ts"
+    "cap:deeplink": "tsx scripts/register-deep-link.ts",
+    "lint:ds": "node scripts/ds-adherence.mjs",
+    "build:worker": "esbuild scripts/worker.ts --bundle --platform=node --target=node22 --format=cjs --external:better-sqlite3 --outfile=dist/worker.cjs --log-level=warning"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.58",
@@ -49,7 +51,6 @@
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.2",
     "googleapis": "^178.0.0",
-    "lucide-react": "^1.41.0",
     "next": "16.3.4",
     "next-themes": "^0.4.6",
     "react": "19.2.8",
@@ -67,6 +68,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",

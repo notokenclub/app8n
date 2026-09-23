@@ -7,9 +7,14 @@ import * as sheets from "@/lib/google/services/sheetsService";
 import * as docs from "@/lib/google/services/docsService";
 import * as tasks from "@/lib/google/services/tasksService";
 import {
+  deleteWorkflow,
+  describeWorkflow,
+  listWorkflows,
   saveWorkflow,
+  setWorkflowStatus,
   workflowDraftSchema,
 } from "@/lib/workflows/authoring";
+import { WORKFLOW_STATUSES } from "@/lib/db/schema";
 
 /**
  * `read`     — no side effects.
@@ -355,7 +360,63 @@ export const AGENT_TOOLS: AgentTool[] = [
       };
     },
   }),
+
+  defineTool({
+    name: "workflow_list",
+    description:
+      "List the user's saved automations with their id, status and schedule. Call this before editing, pausing or deleting one, so the right automation is acted on.",
+    service: "core",
+    impact: "read",
+    parameters: z.object({}),
+    run: async (_args, ctx) => {
+      const rows = await listWorkflows(ctx.userId);
+      return {
+        workflows: rows.map((row) => ({
+          id: row.id,
+          summary: describeWorkflow(row),
+          status: row.status,
+          triggerType: row.triggerType,
+          cronExpression: row.cronExpression,
+          lastRunAt: row.lastRunAt?.toISOString() ?? null,
+        })),
+      };
+    },
+  }),
+
+  defineTool({
+    name: "workflow_set_status",
+    description:
+      "Pause, resume, archive or draft a saved automation. Reversible, so it runs without an approval gate.",
+    service: "core",
+    impact: "write",
+    parameters: z.object({
+      id: z.string(),
+      status: z.enum(WORKFLOW_STATUSES),
+    }),
+    run: async (args, ctx) => {
+      const updated = await setWorkflowStatus(ctx.userId, args.id, args.status);
+      return { id: updated.id, title: updated.title, status: updated.status };
+    },
+  }),
+
+  defineTool({
+    name: "workflow_delete",
+    description:
+      "Delete a saved automation permanently, along with its run history. Prefer pausing unless the user asks for it to be removed.",
+    service: "core",
+    impact: "write",
+    // Saving is reversible and gates when it runs; deleting destroys the
+    // automation and its history outright, which is what the gate is for.
+    requiresApproval: true,
+    parameters: z.object({ id: z.string() }),
+    run: async (args, ctx) => {
+      const removed = await deleteWorkflow(ctx.userId, args.id);
+      if (!removed) throw new Error("No such workflow.");
+      return { id: args.id, deleted: true };
+    },
+  }),
 ];
+
 
 export const TOOLS_BY_NAME: Record<string, AgentTool> = Object.fromEntries(
   AGENT_TOOLS.map((tool) => [tool.name, tool]),
